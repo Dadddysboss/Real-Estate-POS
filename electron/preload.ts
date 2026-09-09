@@ -80,4 +80,8 @@ contextBridge.exposeInMainWorld('api', {
   closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string): Promise<DatabaseResponse<{ id: string }>> => {
     return ipcRenderer.invoke('cash:close-session', { sessionId, closingBalance, expectedBalance, variance, userId, userName });
   },
+  // Shell: open external URLs (wa.me, browser links, etc.)
+  openExternalUrl: (url: string): Promise<{ success: boolean; error?: string }> => {
+    return ipcRenderer.invoke('shell:open-url', url);
+  },
 });

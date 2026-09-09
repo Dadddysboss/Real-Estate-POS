@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   MessageSquare, Plus, X, Phone, Send, Loader2, CheckCircle2, AlertCircle,
-  Trash2, Edit3, Save, Search, Eye, Copy,
+  Trash2, Edit3, Save, Search, Eye, Copy, ExternalLink, Info,
   Smartphone, FileText,
 } from 'lucide-react';
 
@@ -27,6 +27,25 @@ const emptyForm: TemplateForm = {
   message_body: '',
   category: 'GENERAL',
 };
+
+function isElectron(): boolean {
+  return !!(window as any).api?.openExternalUrl;
+}
+
+async function openExternalUrl(url: string): Promise<void> {
+  if (isElectron()) {
+    await (window as any).api.openExternalUrl(url);
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
+function buildWaMeUrl(phone: string, message: string): string {
+  const cleaned = (phone || '').replace(/[^0-9+]/g, '');
+  const digitsOnly = cleaned.startsWith('+') ? cleaned.substring(1) : cleaned;
+  const encodedMsg = encodeURIComponent(message || '');
+  return `https://wa.me/${digitsOnly}?text=${encodedMsg}`;
+}
 
 const WhatsAppGateway: React.FC = () => {
   const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
@@ -173,14 +192,13 @@ const WhatsAppGateway: React.FC = () => {
       setMessage({ type: 'error', text: 'Message cannot be empty' });
       return;
     }
-    if (!apiDeviceKey.trim()) {
-      setMessage({ type: 'error', text: 'API Device Key is required. Configure it first.' });
-      return;
-    }
 
     try {
       setSending(true);
-      const res = await window.api.dbExecute(
+      const url = buildWaMeUrl(previewPhone, previewMessage);
+      await openExternalUrl(url);
+
+      await window.api.dbExecute(
         `INSERT INTO whatsapp_logs (id, template_id, recipient_phone, message_body, api_device_key, status, sent_at, created_at)
          VALUES (?, ?, ?, ?, ?, 'SENT', ?, ?)`,
         [
@@ -188,21 +206,27 @@ const WhatsAppGateway: React.FC = () => {
           selectedTemplate?.id || null,
           previewPhone.trim(),
           previewMessage.trim(),
-          apiDeviceKey.trim(),
+          apiDeviceKey.trim() || 'WA_ME_DIRECT',
           new Date().toISOString(),
           new Date().toISOString(),
         ]
       );
-      if (res.success) {
-        setMessage({ type: 'success', text: `Message sent to ${previewPhone}` });
-      } else {
-        setMessage({ type: 'error', text: res.error || 'Failed to send message' });
-      }
+      setMessage({ type: 'success', text: `WhatsApp opened for ${previewPhone}` });
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to send message' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to open WhatsApp' });
     } finally {
       setSending(false);
     }
+  };
+
+  const handleDirectLink = async () => {
+    if (!previewPhone.trim()) {
+      setMessage({ type: 'error', text: 'Recipient phone number is required' });
+      return;
+    }
+    const msg = previewMessage.trim() || 'Hello!';
+    const url = buildWaMeUrl(previewPhone, msg);
+    await openExternalUrl(url);
   };
 
   const handleCopyMessage = () => {
@@ -245,7 +269,7 @@ const WhatsAppGateway: React.FC = () => {
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <MessageSquare size={24} className="text-green-400" /> WhatsApp Gateway
           </h2>
-          <p className="text-sm text-slate-400">Manage templates, preview & send messages</p>
+          <p className="text-sm text-slate-400">Manage templates, preview & send messages via wa.me</p>
         </div>
         <button
           onClick={() => { setForm({ ...emptyForm }); setEditingId(null); setShowForm(true); }}
@@ -266,6 +290,22 @@ const WhatsAppGateway: React.FC = () => {
         </div>
       )}
 
+      {/* How It Works Banner */}
+      <div className="bg-green-500/5 border border-green-500/20 rounded-xl p-4">
+        <div className="flex items-start gap-3">
+          <Info size={18} className="text-green-400 mt-0.5 flex-shrink-0" />
+          <div className="text-sm">
+            <p className="text-green-300 font-semibold mb-1">How WhatsApp Messaging Works</p>
+            <p className="text-slate-400 leading-relaxed">
+              Click <strong className="text-white">"Open in WhatsApp"</strong> to launch the WhatsApp app on your device (or WhatsApp Web in browser) with the message pre-filled. The recipient's phone must have WhatsApp installed. No API key required for this free method.
+            </p>
+            <p className="text-slate-500 text-xs mt-2">
+              The <strong>API Device Key</strong> field below is reserved for future WhatsApp Business API integration (paid service like UltraMsg/Wassenger). Leave it empty to use the free wa.me method.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Sender Config */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
         <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
@@ -273,7 +313,7 @@ const WhatsAppGateway: React.FC = () => {
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Sender Phone Number</label>
+            <label className="text-xs text-slate-400 block mb-1">Sender Phone Number (your number)</label>
             <div className="relative">
               <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
@@ -286,7 +326,9 @@ const WhatsAppGateway: React.FC = () => {
             </div>
           </div>
           <div>
-            <label className="text-xs text-slate-400 block mb-1">API Device Key</label>
+            <label className="text-xs text-slate-400 block mb-1">
+              API Device Key <span className="text-slate-600">(optional — for paid API providers)</span>
+            </label>
             <div className="relative">
               <Smartphone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
@@ -294,11 +336,14 @@ const WhatsAppGateway: React.FC = () => {
                 value={apiDeviceKey}
                 onChange={(e) => setApiDeviceKey(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-green-500/50"
-                placeholder="Enter your API device key"
+                placeholder="Leave empty for free wa.me method"
               />
             </div>
           </div>
         </div>
+        <p className="text-[10px] text-slate-600 mt-2">
+          Supported paid providers: UltraMsg (ultramsg.com), Wassenger (wassenger.com), Green API (green-api.com). Get your Device Key from their dashboard after subscribing.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -422,7 +467,7 @@ const WhatsAppGateway: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-              <Eye size={16} className="text-green-400" /> Message Preview
+              <Eye size={16} className="text-green-400" /> Message Preview & Send
             </h3>
 
             {/* Selected Template Info */}
@@ -450,6 +495,7 @@ const WhatsAppGateway: React.FC = () => {
                   placeholder="+92 300 1234567"
                 />
               </div>
+              <p className="text-[10px] text-slate-600 mt-1">Include country code (e.g. +92 for Pakistan)</p>
             </div>
 
             {/* Message Body (editable for preview) */}
@@ -484,21 +530,29 @@ const WhatsAppGateway: React.FC = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleCopyMessage}
                 disabled={!previewMessage}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition"
               >
                 <Copy size={14} /> Copy
               </button>
               <button
+                onClick={handleDirectLink}
+                disabled={!previewPhone.trim()}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-green-700 hover:bg-green-600 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition"
+                title="Open wa.me link directly (free, no API key)"
+              >
+                <ExternalLink size={14} /> Open in WhatsApp
+              </button>
+              <button
                 onClick={handleSend}
-                disabled={sending || !previewMessage}
+                disabled={sending || !previewMessage || !previewPhone.trim()}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition"
               >
                 {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                Send Message
+                Send & Log
               </button>
             </div>
           </div>

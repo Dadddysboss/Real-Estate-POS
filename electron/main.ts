@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 
 const TURSO_DB_URL = process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io';
@@ -356,6 +356,21 @@ app.whenReady().then(async () => {
         [userId, closingBalance, expectedBalance, variance, new Date().toISOString(), sessionId]
       );
       return { success: true, data: { id: sessionId } };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Shell: open external URLs (wa.me, browser links, etc.)
+  ipcMain.handle('shell:open-url', async (_event, url: string) => {
+    try {
+      const safeUrl = (url || '').trim();
+      if (!safeUrl) return { success: false, error: 'Empty URL' };
+      if (safeUrl.startsWith('http://') || safeUrl.startsWith('https://') || safeUrl.startsWith('mailto:')) {
+        await shell.openExternal(safeUrl);
+        return { success: true };
+      }
+      return { success: false, error: 'Only http/https/mailto URLs are allowed' };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

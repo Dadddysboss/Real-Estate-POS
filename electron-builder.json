@@ -3,7 +3,7 @@
   "productName": "Dripp Real Estate & DigiKhata ERP",
   "copyright": "Copyright © 2026 Dripp Real Estate Enterprise",
   "directories": {
-    "output": "release",
+    "output": "release-build",
     "buildResources": "build"
   },
   "files": [
