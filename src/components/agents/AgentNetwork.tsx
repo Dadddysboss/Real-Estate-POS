@@ -185,11 +185,12 @@ const AgentNetwork: React.FC = () => {
   };
 
   const filteredAgents = agents.filter(agent => {
+    const sq = (searchQuery ?? '').toLowerCase();
     const matchesSearch =
-      agent.agent_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.agency_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.phone_number.includes(searchQuery) ||
-      agent.cnic.includes(searchQuery);
+      (agent.agent_name ?? '').toLowerCase().includes(sq) ||
+      (agent.agency_name ?? '').toLowerCase().includes(sq) ||
+      (agent.phone_number ?? '').includes(searchQuery) ||
+      (agent.cnic ?? '').includes(searchQuery);
     const matchesType = filterType === 'ALL' || agent.commission_type === filterType;
     return matchesSearch && matchesType;
   });

@@ -279,14 +279,14 @@ const InstallmentEngine: React.FC = () => {
   };
 
   const filteredPlans = plans.filter(plan => {
-    const q = search.toLowerCase();
+    const q = (search ?? '').toLowerCase();
     return (
-      plan.buyer_name.toLowerCase().includes(q) ||
-      plan.buyer_phone.includes(q) ||
-      plan.buyer_cnic.includes(q) ||
-      (plan.plot_number || '').toLowerCase().includes(q) ||
-      (plan.society_name || '').toLowerCase().includes(q) ||
-      plan.id.toLowerCase().includes(q)
+      (plan.buyer_name ?? '').toLowerCase().includes(q) ||
+      (plan.buyer_phone ?? '').includes(q) ||
+      (plan.buyer_cnic ?? '').includes(q) ||
+      (plan.plot_number ?? '').toLowerCase().includes(q) ||
+      (plan.society_name ?? '').toLowerCase().includes(q) ||
+      (plan.id ?? '').toLowerCase().includes(q)
     );
   });
 

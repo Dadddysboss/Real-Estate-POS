@@ -199,7 +199,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
               <tbody className="divide-y divide-slate-800/60">
                 {expenses.map((exp) => (
                   <tr key={exp.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 text-slate-300">{exp.date.slice(0, 10)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{(exp.date ?? '').slice(0, 10)}</td>
                     <td className="py-2.5 px-4">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{exp.category}</span>
                     </td>
@@ -249,7 +249,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                     <td className="py-2.5 px-4 text-right font-mono text-emerald-400">{fmtNum(asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-amber-400">{fmtNum(asset.purchase_price - asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-slate-400">{asset.depreciation_method === 'STRAIGHT_LINE' ? 'Straight Line' : 'Declining Balance'}</td>
-                    <td className="py-2.5 px-4 text-slate-300">{asset.purchase_date.slice(0, 10)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{(asset.purchase_date ?? '').slice(0, 10)}</td>
                   </tr>
                 ))}
                 {assets.length === 0 && (
@@ -274,7 +274,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                 <label className="text-xs text-slate-400 block mb-1">Category</label>
                 <select value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)} className="input-base">
                   {['SALARIES','RENT','ELECTRICITY','WATER','GAS','TELECOMMUNICATION','MAINTENANCE','OFFICE_SUPPLIES','TRANSPORT','MISCELLANEOUS'].map(c => (
-                    <option key={c} value={c}>{c.replace('_', ' ')}</option>
+                    <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
                   ))}
                 </select>
               </div>

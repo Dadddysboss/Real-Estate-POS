@@ -623,7 +623,7 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                               <td className="py-2.5 px-3 text-slate-500 font-mono">{i + 1}</td>
                               <td className="py-2.5 px-3 text-slate-300 flex items-center gap-1.5">
                                 <Calendar size={10} className="text-slate-600" />
-                                {tx.created_at.slice(0, 10)}
+                                {(tx.created_at ?? '').slice(0, 10)}
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">

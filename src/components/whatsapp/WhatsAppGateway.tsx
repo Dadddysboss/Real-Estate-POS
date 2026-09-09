@@ -212,7 +212,8 @@ const WhatsAppGateway: React.FC = () => {
   };
 
   const renderPlaceholderHighlights = (text: string) => {
-    const parts = text.split(/(\{\{[^}]+\}\})/g);
+    const safeText = text ?? '';
+    const parts = safeText.split(/(\{\{[^}]+\}\})/g);
     return parts.map((part, i) => {
       if (/\{\{[^}]+\}\}/.test(part)) {
         return (
@@ -226,9 +227,10 @@ const WhatsAppGateway: React.FC = () => {
   };
 
   const filteredTemplates = templates.filter(tpl => {
+    const sq = (searchQuery ?? '').toLowerCase();
     const matchesSearch =
-      tpl.template_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tpl.message_body.toLowerCase().includes(searchQuery.toLowerCase());
+      (tpl.template_name ?? '').toLowerCase().includes(sq) ||
+      (tpl.message_body ?? '').toLowerCase().includes(sq);
     const matchesCategory = filterCategory === 'ALL' || tpl.category === filterCategory;
     return matchesSearch && matchesCategory;
   });
@@ -370,7 +372,7 @@ const WhatsAppGateway: React.FC = () => {
                             {tpl.status}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">{tpl.message_body.slice(0, 80)}...</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{(tpl.message_body ?? '').slice(0, 80)}...</p>
                         {placeholders.length > 0 && (
                           <div className="flex gap-1 mt-1.5 flex-wrap">
                             {placeholders.map((p: string) => (

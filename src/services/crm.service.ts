@@ -224,7 +224,7 @@ export async function deleteSiteVisit(id: string, userId: string, userName: stri
 // ------------------------------------------------------------------
 
 export function generateWhatsAppLink(phone: string, message: string): string {
-  const cleanPhone = phone.replace(/\D/g, '');
+  const cleanPhone = (phone ?? '').replace(/\D/g, '');
   const encodedMessage = encodeURIComponent(message);
   return `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
 }

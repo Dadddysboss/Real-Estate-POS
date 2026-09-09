@@ -132,6 +132,6 @@ export async function processSyncQueue(recordId: string, _sourceBranchId: string
 // ------------------------------------------------------------------
 
 export function generateBranchCode(branchName: string): string {
-  const code = branchName.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  const code = (branchName ?? '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
   return `BR_${code}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 }

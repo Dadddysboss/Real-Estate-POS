@@ -146,7 +146,7 @@ export const SalesEngine: React.FC<SalesEngineProps> = ({ branchId, currentUser:
     lines.push('═══════════════════════════════════════════════');
     lines.push('            SALE RECEIPT');
     lines.push('═══════════════════════════════════════════════');
-    lines.push(`  Receipt # : ${row.sale_id}`);
+    lines.push(`  Receipt # : ${row.sale_id || '—'}`);
     lines.push(`  Date      : ${row.sale_date || '—'}`);
     lines.push('───────────────────────────────────────────────');
     lines.push(`  Buyer     : ${row.buyer_name || '—'}`);

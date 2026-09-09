@@ -232,7 +232,7 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
                       {' '}<span className="text-slate-400">{log.action_type}</span> in <span className="text-purple-400 font-mono">{log.module_name}</span>
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">{log.description || '—'}</p>
-                    <p className="text-[10px] text-slate-600 mt-1">{log.created_at.slice(0, 19)}</p>
+                    <p className="text-[10px] text-slate-600 mt-1">{(log.created_at ?? '').slice(0, 19)}</p>
                   </div>
                 </div>
               </div>

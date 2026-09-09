@@ -151,7 +151,7 @@ export function generateKhataStatement(partyName: string, entries: DigiKhataEntr
   lines.push('');
   lines.push('───────────────────────────────────────────────────────────────────');
   entries.slice(0, 40).forEach((e) => {
-    const line = `  ${e.created_at.slice(0, 10)}  ${e.entry_type.padEnd(12)} Rs.${e.amount.toLocaleString().padStart(12)}`;
+    const line = `  ${(e.created_at ?? '').slice(0, 10)}  ${(e.entry_type ?? '').padEnd(12)} Rs.${(e.amount || 0).toLocaleString().padStart(12)}`;
     lines.push(line);
   });
   lines.push('───────────────────────────────────────────────────────────────────');

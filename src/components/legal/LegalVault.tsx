@@ -351,7 +351,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Document Type</label>
                 <select value={docType} onChange={(e) => setDocType(e.target.value as typeof docType)} className="input-base">
-                  {['SALE_AGREEMENT','LEASE_AGREEMENT','CNIC_COPY','TITLE_DEED','NOC','RECEIPT','OTHER'].map(t => (<option key={t} value={t}>{t.replace('_', ' ')}</option>))}
+                  {['SALE_AGREEMENT','LEASE_AGREEMENT','CNIC_COPY','TITLE_DEED','NOC','RECEIPT','OTHER'].map(t => (<option key={t} value={t}>{t.replace(/_/g, ' ')}</option>))}
                 </select>
               </div>
               <div>

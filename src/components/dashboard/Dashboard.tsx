@@ -441,7 +441,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
                   <div className="w-full h-1 rounded-full" style={{ backgroundColor: color }} />
                   <p className="text-2xl font-bold font-mono text-white">{item.count}</p>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider leading-tight">
-                    {item.stage.replace('_', ' ')}
+                    {(item.stage ?? '').replace(/_/g, ' ')}
                   </p>
                 </div>
               );

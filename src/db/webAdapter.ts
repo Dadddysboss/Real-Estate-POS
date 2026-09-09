@@ -1,3 +1,5 @@
+import { sanitizeParamsForTurso, sanitizeRowsFromDB, safeStr } from './dbSanitizer';
+
 interface DatabaseResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -33,14 +35,7 @@ const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || 'libsql://real-e
 
 const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
 
-function serializeArg(a: unknown): { type: string; value?: unknown } {
-  if (a === null || a === undefined) return { type: 'null' };
-  if (typeof a === 'number') return { type: 'text', value: String(a) };
-  if (typeof a === 'boolean') return { type: 'text', value: a ? '1' : '0' };
-  return { type: 'text', value: String(a) };
-}
-
-async function tursoExecuteMulti(requests: { sql: string; args?: (string | number | null)[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
+async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
   const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
   const response = await fetch(httpUrl, {
     method: 'POST',
@@ -53,7 +48,7 @@ async function tursoExecuteMulti(requests: { sql: string; args?: (string | numbe
         type: 'execute',
         stmt: {
           sql: r.sql,
-          args: (r.args || []).map(serializeArg),
+          args: sanitizeParamsForTurso(r.args || []),
         },
       })),
     }),
@@ -65,17 +60,18 @@ async function tursoExecuteMulti(requests: { sql: string; args?: (string | numbe
   }
 
   const data = await response.json();
-  const result = data.results?.[0];
-  if (!result || !result.response) {
+  const results = data.results || [];
+  const lastResult = results[results.length - 1];
+  if (!lastResult || !lastResult.response) {
     throw new Error('Empty response from Turso');
   }
-  if (result.response.type === 'error') {
-    throw new Error(result.response.message || 'Turso execution error');
+  if (lastResult.response.type === 'error') {
+    throw new Error(lastResult.response.message || 'Turso execution error');
   }
-  return { rows: result.response.result?.rows || [] };
+  return { rows: sanitizeRowsFromDB(lastResult.response.result?.rows || []) };
 }
 
-async function tursoExecute(sql: string, args: (string | number | null)[] = []): Promise<{ rows: Record<string, unknown>[] }> {
+async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
   const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
   const response = await fetch(httpUrl, {
     method: 'POST',
@@ -88,7 +84,7 @@ async function tursoExecute(sql: string, args: (string | number | null)[] = []):
         type: 'execute',
         stmt: {
           sql,
-          args: args.map(serializeArg),
+          args: sanitizeParamsForTurso(args),
         },
       }],
     }),
@@ -107,7 +103,7 @@ async function tursoExecute(sql: string, args: (string | number | null)[] = []):
   if (result.response.type === 'error') {
     throw new Error(result.response.message || 'Turso execution error');
   }
-  return { rows: result.response.result?.rows || [] };
+  return { rows: sanitizeRowsFromDB(result.response.result?.rows || []) };
 }
 
 async function autoSeedDatabase(): Promise<void> {
@@ -190,7 +186,7 @@ function initWebApi(): WebApi {
   return {
     dbExecute: async (sql: string, args: unknown[] = []): Promise<DatabaseResponse> => {
       try {
-        const result = await tursoExecute(sql, args as (string | number | null)[]);
+        const result = await tursoExecute(sql, args);
         return { success: true, data: result };
       } catch (err) {
         console.error('[Web DB Execute Error]', err);
@@ -200,8 +196,8 @@ function initWebApi(): WebApi {
 
     dbQuery: async <T = unknown>(sql: string, args: unknown[] = []): Promise<DatabaseResponse<T[]>> => {
       try {
-        const result = await tursoExecute(sql, args as (string | number | null)[]);
-        return { success: true, data: result.rows as unknown as T[] };
+        const result = await tursoExecute(sql, args);
+        return { success: true, data: sanitizeRowsFromDB(result.rows as Record<string, unknown>[]) as unknown as T[] };
       } catch (err) {
         console.error('[Web DB Query Error]', err);
         return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -252,7 +248,7 @@ function initWebApi(): WebApi {
         const printWindow = window.open('', '_blank', 'width=400,height=600');
         if (printWindow) {
           printWindow.document.write(
-            `<html><head><title>Receipt</title><style>body{font-family:monospace;padding:20px;}pre{white-space:pre-wrap;}</style></head><body><pre>${receiptText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`
+            `<html><head><title>Receipt</title><style>body{font-family:monospace;padding:20px;}pre{white-space:pre-wrap;}</style></head><body><pre>${safeStr(receiptText).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`
           );
           printWindow.document.close();
           setTimeout(() => printWindow.print(), 500);
