@@ -23,10 +23,20 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onSuccess }) => {
       if (result.success && result.data) {
         onSuccess(result.data);
       } else {
-        setError(result.error || 'Invalid credentials');
+        const msg = result.error || '';
+        if (msg.includes('Empty response') || msg.includes('Turso') || msg.includes('network') || msg.includes('fetch')) {
+          setError('Unable to connect to server. Please try again.');
+        } else {
+          setError(msg || 'Invalid username or password');
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('Empty response') || msg.includes('Turso') || msg.includes('network') || msg.includes('fetch')) {
+        setError('Unable to connect to server. Please try again.');
+      } else {
+        setError(msg || 'Authentication failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

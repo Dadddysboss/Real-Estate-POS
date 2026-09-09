@@ -33,6 +33,41 @@ const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || 'libsql://real-e
 
 const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
 
+async function tursoExecuteMulti(requests: { sql: string; args?: (string | number | null)[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
+  const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
+  const response = await fetch(httpUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: requests.map(r => ({
+        type: 'execute',
+        stmt: {
+          sql: r.sql,
+          args: (r.args || []).map(a => a === null ? { type: 'null' } : typeof a === 'number' ? { type: 'integer', value: a } : { type: 'text', value: a }),
+        },
+      })),
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Turso HTTP ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const result = data.results?.[0];
+  if (!result || !result.response) {
+    throw new Error('Empty response from Turso');
+  }
+  if (result.response.type === 'error') {
+    throw new Error(result.response.message || 'Turso execution error');
+  }
+  return { rows: result.response.result?.rows || [] };
+}
+
 async function tursoExecute(sql: string, args: (string | number | null)[] = []): Promise<{ rows: Record<string, unknown>[] }> {
   const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
   const response = await fetch(httpUrl, {
@@ -68,6 +103,35 @@ async function tursoExecute(sql: string, args: (string | number | null)[] = []):
   return { rows: result.response.result?.rows || [] };
 }
 
+async function autoSeedDatabase(): Promise<void> {
+  try {
+    const checkResult = await tursoExecute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'");
+    if (checkResult.rows.length === 0) {
+      console.log('[Web] Users table not found, creating schema...');
+      await tursoExecuteMulti([
+        { sql: "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT, role TEXT DEFAULT 'STAFF', branch_id TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))" },
+        { sql: "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))" },
+        { sql: "CREATE TABLE IF NOT EXISTS cash_sessions (id TEXT PRIMARY KEY, branch_id TEXT, opened_by TEXT, opening_balance REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', opened_at TEXT, closed_by TEXT, closing_balance REAL, expected_balance REAL, variance REAL, closed_at TEXT)" },
+      ]);
+    }
+
+    const countResult = await tursoExecute('SELECT COUNT(*) as cnt FROM users');
+    const count = countResult.rows[0]?.cnt;
+    const userCount = typeof count === 'number' ? count : parseInt(String(count ?? '0'), 10);
+
+    if (userCount === 0) {
+      console.log('[Web] No users found, seeding default admin...');
+      await tursoExecuteMulti([
+        { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
+        { sql: "INSERT OR IGNORE INTO users (id, username, password_hash, full_name, role, branch_id, status) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'BRANCH_MAIN', 'ACTIVE')" },
+      ]);
+      console.log('[Web] Default admin user seeded successfully');
+    }
+  } catch (err) {
+    console.error('[Web] Auto-seed failed (non-blocking):', err);
+  }
+}
+
 function initWebApi(): WebApi {
   return {
     dbExecute: async (sql: string, args: unknown[] = []): Promise<DatabaseResponse> => {
@@ -92,6 +156,9 @@ function initWebApi(): WebApi {
 
     authenticate: async (username: string, pin: string): Promise<AuthResponse> => {
       try {
+        if (!username || !pin) {
+          return { success: false, error: 'Username and password are required.' };
+        }
         const result = await tursoExecute(
           'SELECT * FROM users WHERE username = ? AND password_hash = ? AND status = ? LIMIT 1',
           [username, pin, 'ACTIVE']
@@ -111,10 +178,14 @@ function initWebApi(): WebApi {
             },
           };
         }
-        return { success: false, error: 'Invalid credentials or inactive account.' };
+        return { success: false, error: 'Invalid username or password.' };
       } catch (err) {
         console.error('[Web Auth Error]', err);
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('Empty response') || msg.includes('Turso')) {
+          return { success: false, error: 'Unable to connect to authentication server.' };
+        }
+        return { success: false, error: 'Authentication failed. Please try again.' };
       }
     },
 
@@ -181,5 +252,6 @@ export function initWebDatabase(): void {
   if (typeof window !== 'undefined' && !(window as unknown as Record<string, unknown>).api) {
     (window as unknown as Record<string, unknown>).api = initWebApi();
     console.log('[Web] Turso HTTP adapter initialized for browser mode');
+    autoSeedDatabase();
   }
 }
