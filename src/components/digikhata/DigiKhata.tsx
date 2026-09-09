@@ -27,7 +27,8 @@ interface Transaction {
   created_at: string;
 }
 
-const fmt = (n: number) => `Rs. ${Math.abs(Math.round(n)).toLocaleString('en-PK')}`;
+const fmt = (n: number) => `Rs. ${Math.abs(Math.round(n || 0)).toLocaleString('en-PK')}`;
+const safeStr = (v: unknown): string => v == null ? '' : String(v);
 const PARTY_TYPES = ['CUSTOMER', 'VENDOR', 'INVESTOR', 'AGENT', 'PARTNER'] as const;
 const PAYMENT_MODES = ['Cash', 'JazzCash', 'EasyPaisa', 'Bank Transfer'] as const;
 
@@ -67,12 +68,12 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
 
   const filtered = useMemo(() => {
     if (!searchTerm.trim()) return parties;
-    const q = searchTerm.toLowerCase();
+    const q = (searchTerm ?? '').toLowerCase();
     return parties.filter(
       (p) =>
-        p.party_name.toLowerCase().includes(q) ||
-        p.phone_number.includes(q) ||
-        p.party_type.toLowerCase().includes(q),
+        (p.party_name ?? '').toLowerCase().includes(q) ||
+        (p.phone_number ?? '').includes(q) ||
+        (p.party_type ?? '').toLowerCase().includes(q),
     );
   }, [parties, searchTerm]);
 
@@ -83,7 +84,17 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
         'SELECT * FROM digikhata_parties ORDER BY current_balance DESC',
       );
       if (!res.success || !res.data) throw new Error(res.error || 'Failed to load parties');
-      setParties(Array.isArray(res.data[0]) ? res.data[0] as any : res.data as any);
+      const raw: Party[] = Array.isArray(res.data[0]) ? (res.data[0] as any) : (res.data as any);
+      const sanitized = raw.map(p => ({
+        ...p,
+        id: p.id ?? `PARTY_${Date.now()}_${Math.random()}`,
+        party_name: p.party_name ?? 'Unknown Party',
+        phone_number: p.phone_number ?? '-',
+        party_type: (p.party_type ?? 'CUSTOMER') as Party['party_type'],
+        current_balance: Number(p.current_balance) || 0,
+        created_at: p.created_at ?? new Date().toISOString(),
+      }));
+      setParties(sanitized);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load parties' });
     }
@@ -100,7 +111,19 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
         [party.id],
       );
       if (!res.success || !res.data) throw new Error(res.error || 'Failed to load transactions');
-      setLedgerTxns(Array.isArray(res.data[0]) ? res.data[0] as any : res.data as any);
+      const raw: Transaction[] = Array.isArray(res.data[0]) ? (res.data[0] as any) : (res.data as any);
+      const sanitized = raw.map(t => ({
+        ...t,
+        id: t.id ?? `TX_${Date.now()}_${Math.random()}`,
+        party_id: t.party_id ?? '',
+        entry_type: (t.entry_type ?? 'CREDIT_LENA') as Transaction['entry_type'],
+        amount: Number(t.amount) || 0,
+        description: t.description ?? '',
+        due_date: t.due_date ?? null,
+        attachment_url: t.attachment_url ?? null,
+        created_at: t.created_at ?? new Date().toISOString(),
+      }));
+      setLedgerTxns(sanitized);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load ledger' });
     }
@@ -308,20 +331,20 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                       <td className="py-3.5 px-5">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-400 text-xs font-bold shrink-0">
-                            {party.party_name.charAt(0).toUpperCase()}
+                            {(safeStr(party.party_name).charAt(0) || '?').toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-semibold text-white text-sm">{party.party_name}</p>
-                            <p className="text-[10px] text-slate-500">ID: {party.id.slice(0, 12)}…</p>
+                            <p className="font-semibold text-white text-sm">{safeStr(party.party_name)}</p>
+                            <p className="text-[10px] text-slate-500">ID: {safeStr(party.id).slice(0, 12)}…</p>
                           </div>
                         </div>
                       </td>
                       <td className="py-3.5 px-5 text-slate-300 text-sm flex items-center gap-1.5">
-                        <Phone size={12} className="text-slate-500" /> {party.phone_number}
+                        <Phone size={12} className="text-slate-500" /> {safeStr(party.phone_number)}
                       </td>
                       <td className="py-3.5 px-5">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getPartyTypeColor(party.party_type)}`}>
-                          {party.party_type}
+                          {safeStr(party.party_type)}
                         </span>
                       </td>
                       <td className="py-3.5 px-5 text-right">

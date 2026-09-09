@@ -17,7 +17,8 @@ interface PlotInventoryProps {
 
 type ViewMode = 'grid' | 'table' | 'map';
 
-const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
+const fmt = (n: number) => `Rs. ${Math.round(n || 0).toLocaleString('en-PK')}`;
+const safeStr = (v: unknown): string => v == null ? '' : String(v);
 
 const STATUS_STYLE: Record<string, string> = {
   AVAILABLE: 'status-emerald',
@@ -80,7 +81,7 @@ const formToState = (p: PlotRecord): PlotFormState => ({
   size_unit: (p as any).size_unit ?? 'Marla',
   category: p.category,
   feature_tags_input: parseFeatureTags(p.feature_tags).join(', '),
-  purchase_date: p.purchase_date.slice(0, 10),
+  purchase_date: (p.purchase_date ?? '').slice(0, 10),
   purchase_price: p.purchase_price,
   target_asking_price: p.target_asking_price,
   floor_price: p.floor_price,
@@ -128,7 +129,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
   const groupedByBlock = useMemo(() => {
     const map = new Map<string, PlotRecord[]>();
     for (const p of filtered) {
-      const key = `${p.society_name} / ${p.block_phase}`;
+      const key = `${safeStr(p.society_name) || 'Unknown'} / ${safeStr(p.block_phase) || '-'}`;
       const list = map.get(key) || [];
       list.push(p);
       map.set(key, list);
@@ -311,7 +312,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   <p className="text-xs text-slate-400">Block/Phase {plot.block_phase} • Plot #{plot.plot_number}</p>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${STATUS_STYLE[plot.status]}`}>
-                  {plot.status.replace(/_/g, ' ')}
+                  {(plot.status ?? '').replace(/_/g, ' ')}
                 </span>
               </div>
               {parseFeatureTags(plot.feature_tags).length > 0 && (
@@ -379,7 +380,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   <td className="py-2.5 pr-4 text-right font-mono text-emerald-400">{fmt(plot.target_asking_price)}</td>
                   <td className="py-2.5 pr-4 text-right font-mono text-sky-400">{fmt(plot.floor_price)}</td>
                   <td className="py-2.5 pr-4">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLE[plot.status]}`}>{plot.status.replace(/_/g, ' ')}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLE[plot.status]}`}>{(plot.status ?? '').replace(/_/g, ' ')}</span>
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
