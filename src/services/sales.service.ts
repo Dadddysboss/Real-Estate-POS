@@ -80,7 +80,7 @@ export async function createSale(
     description: `Sale recorded: ${payload.buyer_name} — Rs. ${totalSalePrice.toLocaleString()}`,
   });
 
-  await window.api.dbExecute(`UPDATE plot_inventory SET status = 'SOLD' WHERE plot_id = ?`, [payload.plot_id]);
+  await window.api.dbExecute(`UPDATE inventory_plots SET status = 'SOLD' WHERE id = ?`, [payload.plot_id]);
 
   return saleId;
 }
