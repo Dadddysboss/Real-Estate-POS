@@ -1,7 +1,85 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
-import { initializeLocalDatabase, executeQuery, selectQuery } from '../src/db/client';
-import { verifyCredentials } from '../src/services/auth.service';
+
+const TURSO_DB_URL = process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io';
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
+
+function sanitizeParam(p: unknown): { type: string; value?: string } {
+  if (p === undefined || p === null) return { type: 'null' };
+  if (typeof p === 'number') return { type: 'text', value: String(Number.isNaN(p) ? 0 : p) };
+  if (typeof p === 'boolean') return { type: 'text', value: p ? '1' : '0' };
+  if (typeof p === 'object') return { type: 'text', value: JSON.stringify(p) };
+  return { type: 'text', value: String(p) };
+}
+
+function sanitizeRow(row: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  for (const key in row) {
+    safe[key] = row[key] === null || row[key] === undefined ? '' : row[key];
+  }
+  return safe;
+}
+
+async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
+  const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
+  const response = await fetch(httpUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: [{
+        type: 'execute',
+        stmt: {
+          sql,
+          args: args.map(sanitizeParam),
+        },
+      }],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Turso HTTP ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const result = data.results?.[0];
+  if (!result || !result.response) {
+    throw new Error('Empty response from Turso');
+  }
+  if (result.response.type === 'error') {
+    throw new Error(result.response.message || 'Turso execution error');
+  }
+  const rows = (result.response.result?.rows || []).map(sanitizeRow);
+  return { rows };
+}
+
+async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<void> {
+  const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
+  const response = await fetch(httpUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      requests: requests.map(r => ({
+        type: 'execute',
+        stmt: {
+          sql: r.sql,
+          args: (r.args || []).map(sanitizeParam),
+        },
+      })),
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Turso HTTP ${response.status}: ${text}`);
+  }
+}
 
 let mainWindow: BrowserWindow | null = null;
 let printWindow: BrowserWindow | null = null;
@@ -30,7 +108,7 @@ function createWindow() {
 function printReceiptText(receiptText: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      const safeText = receiptText
+      const safeText = (receiptText || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
@@ -70,39 +148,101 @@ function printReceiptText(receiptText: string): Promise<void> {
   });
 }
 
-app.whenReady().then(async () => {
-  await initializeLocalDatabase();
+const TABLES_TO_ENSURE = [
+  "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'STAFF', status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS cash_sessions (id TEXT PRIMARY KEY, branch_id TEXT, opened_by TEXT, opening_balance REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', opened_at TEXT, closed_by TEXT, closing_balance REAL, expected_balance REAL, variance REAL, closed_at TEXT)",
+  "CREATE TABLE IF NOT EXISTS inventory_plots (id TEXT PRIMARY KEY, branch_id TEXT, plot_number TEXT, society_name TEXT, block_phase TEXT, size_dimension TEXT, size_value REAL DEFAULT 0, size_unit TEXT DEFAULT 'Marla', category TEXT, feature_tags TEXT, purchase_date TEXT, purchase_price REAL, target_asking_price REAL, floor_price REAL, gps_coordinates TEXT, status TEXT DEFAULT 'AVAILABLE', construction_status TEXT DEFAULT 'NONE', notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS sales_transactions (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, final_sale_price REAL, cost_basis REAL, development_costs REAL DEFAULT 0, agent_commission REAL DEFAULT 0, government_taxes REAL DEFAULT 0, net_profit_calculated REAL, payment_method TEXT, agent_id TEXT, sale_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS sale_payment_breakdowns (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, payment_method TEXT NOT NULL, transaction_ref TEXT, amount REAL NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS installment_plans (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, total_sale_price REAL, down_payment REAL, plan_duration_months INTEGER, monthly_installment_amount REAL, start_date TEXT, due_day_of_month INTEGER, grace_period_days INTEGER DEFAULT 5, late_penalty_fee REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS installment_schedules (id TEXT PRIMARY KEY, plan_id TEXT, installment_number INTEGER, due_date TEXT, amount_due REAL, amount_paid REAL DEFAULT 0, late_fine_charged REAL DEFAULT 0, discount_applied REAL DEFAULT 0, payment_date TEXT, payment_method TEXT, status TEXT DEFAULT 'PENDING', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS installment_payments (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, plot_id TEXT, amount_paid REAL NOT NULL, payment_date TEXT DEFAULT (datetime('now')), payment_mode TEXT DEFAULT 'CASH', receipt_no TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS digikhata_parties (id TEXT PRIMARY KEY, party_name TEXT, phone_number TEXT, party_type TEXT, current_balance REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS digikhata_entries (id TEXT PRIMARY KEY, party_id TEXT, entry_type TEXT, amount REAL, description TEXT, due_date TEXT, attachment_url TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, agency_name TEXT, agent_name TEXT, phone_number TEXT, cnic TEXT, commission_type TEXT, commission_rate REAL, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS agent_commissions (id TEXT PRIMARY KEY, agent_id TEXT, transaction_id TEXT, commission_earned REAL, commission_paid REAL DEFAULT 0, balance_due REAL, status TEXT DEFAULT 'UNPAID', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, branch_id TEXT, prospect_name TEXT, phone_number TEXT, interested_category TEXT, budget_range REAL, lead_source TEXT, assigned_agent_id TEXT, pipeline_stage TEXT DEFAULT 'NEW_LEAD', priority TEXT DEFAULT 'WARM', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, material_type TEXT NOT NULL, quantity REAL NOT NULL, unit_price REAL NOT NULL, total_amount REAL NOT NULL, supplier_name TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT, description TEXT, amount REAL, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS whatsapp_templates (id TEXT PRIMARY KEY, template_key TEXT UNIQUE, message_body TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS audit_trail_logs (id TEXT PRIMARY KEY, user_id TEXT, user_name TEXT, action_type TEXT, module_name TEXT, entity_id TEXT, description TEXT, ip_address TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS plazas (id TEXT PRIMARY KEY, branch_id TEXT, plaza_name TEXT, city_location TEXT, total_floors INTEGER, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS plaza_units (id TEXT PRIMARY KEY, plaza_id TEXT, floor_level TEXT, unit_number TEXT, covered_area_sqft REAL, rate_per_sqft REAL, target_price REAL, status TEXT DEFAULT 'AVAILABLE', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT, target_capital REAL, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS investor_members (id TEXT PRIMARY KEY, pool_id TEXT, investor_name TEXT, phone TEXT, invested_amount REAL, equity_percentage REAL, total_payout_received REAL DEFAULT 0)",
+  "CREATE TABLE IF NOT EXISTS land_acquisitions (id TEXT PRIMARY KEY, seller_name TEXT, seller_phone TEXT, seller_cnic TEXT, land_title_khata TEXT, total_agreed_price REAL, advance_paid REAL, debt_remaining REAL, acquisition_date TEXT, registry_doc_url TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS document_vault (id TEXT PRIMARY KEY, document_title TEXT, reference_type TEXT, reference_id TEXT, file_path_or_base64 TEXT, qr_verification_hash TEXT, expiry_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS agency_settings (id TEXT PRIMARY KEY DEFAULT 'MAIN_SETTINGS', agency_name TEXT DEFAULT 'Real Estate Enterprise', tagline TEXT, phone_primary TEXT, whatsapp_number TEXT, address TEXT, currency_symbol TEXT DEFAULT 'Rs.', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE INDEX IF NOT EXISTS idx_plots_status ON inventory_plots(status)",
+  "CREATE INDEX IF NOT EXISTS idx_schedules_plan ON installment_schedules(plan_id)",
+  "CREATE INDEX IF NOT EXISTS idx_digikhata_party ON digikhata_entries(party_id)",
+];
 
-  // Register Database IPC Handlers
+async function initializeDatabase() {
+  try {
+    console.log('[Desktop] Ensuring all database tables exist...');
+    await tursoExecuteMulti(TABLES_TO_ENSURE.map(sql => ({ sql })));
+    console.log('[Desktop] All tables ensured.');
+  } catch (err) {
+    console.error('[Desktop] DB init failed (non-blocking):', err);
+  }
+}
+
+app.whenReady().then(async () => {
+  await initializeDatabase();
+
   ipcMain.handle('db:execute', async (_event, { sql, args }) => {
     try {
-      const result = await executeQuery(sql, args);
+      const result = await tursoExecute(sql, args || []);
       return { success: true, data: result };
     } catch (err) {
+      console.error('[Desktop DB Execute Error]', err);
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
   ipcMain.handle('db:query', async (_event, { sql, args }) => {
     try {
-      const rows = await selectQuery(sql, args);
-      return { success: true, data: rows };
+      const result = await tursoExecute(sql, args || []);
+      return { success: true, data: result.rows };
     } catch (err) {
+      console.error('[Desktop DB Query Error]', err);
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
-  // Register Auth IPC Handler (Enforces dripp / 5821 Gate)
   ipcMain.handle('auth:login', async (_event, { username, pin }) => {
     try {
-      const authResult = await verifyCredentials(username, pin);
-      return authResult;
+      const result = await tursoExecute(
+        'SELECT id, username, full_name, role, password_hash FROM users WHERE username = ? AND status = ? LIMIT 1',
+        [username.trim(), 'ACTIVE']
+      );
+      if (result.rows.length === 0) {
+        return { success: false, error: 'Invalid username or password.' };
+      }
+      const user = result.rows[0];
+      if (user.password_hash !== pin.trim()) {
+        return { success: false, error: 'Invalid username or password.' };
+      }
+      return {
+        success: true,
+        data: {
+          token: `desktop_session_${Date.now()}`,
+          user: {
+            id: String(user.id),
+            username: String(user.username),
+            fullName: String(user.full_name),
+            role: String(user.role),
+          },
+        },
+      };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
 
-  // Thermal Receipt IPC Handler (80mm)
   ipcMain.handle('print:receipt', async (_event, receiptText: string) => {
     try {
       await printReceiptText(receiptText);
@@ -112,25 +252,13 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Cash Counter Session IPC Handlers
   ipcMain.handle('cash:get-sessions', async (_event, branchId: string) => {
     try {
-      const sql = `
-        SELECT id, branch_id, opened_by, opening_balance, status, opened_at
-        FROM cash_sessions
-        WHERE branch_id = ?
-        ORDER BY opened_at DESC
-        LIMIT 20
-      `;
-      const rows = await selectQuery<{
-        id: string;
-        branch_id: string;
-        opened_by: string;
-        opening_balance: number;
-        status: string;
-        opened_at: string;
-      }>(sql, [branchId]);
-      return { success: true, data: rows };
+      const result = await tursoExecute(
+        'SELECT id, branch_id, opened_by, opening_balance, status, opened_at FROM cash_sessions WHERE branch_id = ? ORDER BY opened_at DESC LIMIT 20',
+        [branchId]
+      );
+      return { success: true, data: result.rows };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -138,25 +266,18 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('cash:open-session', async (_event, { branchId, openingBalance, userId }) => {
     try {
-      const open = await selectQuery<{ id: string }>(
+      const open = await tursoExecute(
         `SELECT id FROM cash_sessions WHERE branch_id = ? AND status = 'OPEN' LIMIT 1`,
         [branchId]
       );
-      if (open.length > 0) {
+      if (open.rows.length > 0) {
         return { success: false, error: 'A cash drawer session is already OPEN for this branch.' };
       }
       const id = `SESS_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      const sql = `
-        INSERT INTO cash_sessions (id, branch_id, opened_by, opening_balance, status, opened_at)
-        VALUES (?, ?, ?, ?, 'OPEN', CURRENT_TIMESTAMP)
-      `;
-      await executeQuery(sql, [id, branchId, userId, openingBalance]);
-
-      await executeQuery(
-        `INSERT INTO sync_queue (id, action_type, target_table, payload_json, status, created_at) VALUES (?, 'INSERT', 'cash_sessions', ?, 'PENDING', CURRENT_TIMESTAMP)`,
-        [`SYNC_${id}`, JSON.stringify({ id, branch_id: branchId, opened_by: userId, opening_balance: openingBalance, status: 'OPEN' })]
+      await tursoExecute(
+        'INSERT INTO cash_sessions (id, branch_id, opened_by, opening_balance, status, opened_at) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, branchId, userId, openingBalance, 'OPEN', new Date().toISOString()]
       );
-
       return { success: true, data: { id } };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -165,18 +286,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('cash:close-session', async (_event, { sessionId, closingBalance, expectedBalance, variance, userId }) => {
     try {
-      const sql = `
-        UPDATE cash_sessions
-        SET status = 'CLOSED', closed_by = ?, closing_balance = ?, expected_balance = ?, variance = ?, closed_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND status = 'OPEN'
-      `;
-      await executeQuery(sql, [userId, closingBalance, expectedBalance, variance, sessionId]);
-
-      await executeQuery(
-        `INSERT INTO sync_queue (id, action_type, target_table, payload_json, status, created_at) VALUES (?, 'UPDATE', 'cash_sessions', ?, 'PENDING', CURRENT_TIMESTAMP)`,
-        [`SYNC_${sessionId}`, JSON.stringify({ id: sessionId, closing_balance: closingBalance, expected_balance: expectedBalance, variance, status: 'CLOSED' })]
+      await tursoExecute(
+        `UPDATE cash_sessions SET status = 'CLOSED', closed_by = ?, closing_balance = ?, expected_balance = ?, variance = ?, closed_at = ? WHERE id = ? AND status = 'OPEN'`,
+        [userId, closingBalance, expectedBalance, variance, new Date().toISOString(), sessionId]
       );
-
       return { success: true, data: { id: sessionId } };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
