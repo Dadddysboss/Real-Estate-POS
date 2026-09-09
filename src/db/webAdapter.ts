@@ -33,6 +33,13 @@ const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || 'libsql://real-e
 
 const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
 
+function serializeArg(a: unknown): { type: string; value?: unknown } {
+  if (a === null || a === undefined) return { type: 'null' };
+  if (typeof a === 'number') return { type: 'text', value: String(a) };
+  if (typeof a === 'boolean') return { type: 'text', value: a ? '1' : '0' };
+  return { type: 'text', value: String(a) };
+}
+
 async function tursoExecuteMulti(requests: { sql: string; args?: (string | number | null)[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
   const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
   const response = await fetch(httpUrl, {
@@ -46,7 +53,7 @@ async function tursoExecuteMulti(requests: { sql: string; args?: (string | numbe
         type: 'execute',
         stmt: {
           sql: r.sql,
-          args: (r.args || []).map(a => a === null ? { type: 'null' } : typeof a === 'number' ? { type: 'integer', value: a } : { type: 'text', value: a }),
+          args: (r.args || []).map(serializeArg),
         },
       })),
     }),
@@ -81,7 +88,7 @@ async function tursoExecute(sql: string, args: (string | number | null)[] = []):
         type: 'execute',
         stmt: {
           sql,
-          args: args.map(a => a === null ? { type: 'null' } : typeof a === 'number' ? { type: 'integer', value: a } : { type: 'text', value: a }),
+          args: args.map(serializeArg),
         },
       }],
     }),

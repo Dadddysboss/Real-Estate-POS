@@ -39,7 +39,8 @@ interface PlotFormState {
   plot_number: string;
   society_name: string;
   block_phase: string;
-  size_dimension: string;
+  size_value: number;
+  size_unit: string;
   category: PlotRecord['category'];
   feature_tags_input: string;
   purchase_date: string;
@@ -51,11 +52,15 @@ interface PlotFormState {
   notes: string;
 }
 
+const SIZE_UNITS = ['Marla', 'Kanal', 'Murabba', 'Acre', 'Sqft', 'Sqyard'];
+const SIZE_UNIT_OPTIONS = SIZE_UNITS.map(u => ({ value: u, label: u }));
+
 const emptyForm = (): PlotFormState => ({
   plot_number: '',
   society_name: '',
   block_phase: '',
-  size_dimension: '5 Marla',
+  size_value: 5,
+  size_unit: 'Marla',
   category: 'RESIDENTIAL',
   feature_tags_input: '',
   purchase_date: new Date().toISOString().split('T')[0],
@@ -71,7 +76,8 @@ const formToState = (p: PlotRecord): PlotFormState => ({
   plot_number: p.plot_number,
   society_name: p.society_name,
   block_phase: p.block_phase,
-  size_dimension: p.size_dimension,
+  size_value: (p as any).size_value ?? 5,
+  size_unit: (p as any).size_unit ?? 'Marla',
   category: p.category,
   feature_tags_input: parseFeatureTags(p.feature_tags).join(', '),
   purchase_date: p.purchase_date.slice(0, 10),
@@ -142,7 +148,9 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         plot_number: form.plot_number.trim(),
         society_name: form.society_name.trim(),
         block_phase: form.block_phase.trim(),
-        size_dimension: form.size_dimension.trim() || '5 Marla',
+        size_value: Math.round(form.size_value * 100) / 100,
+        size_unit: form.size_unit,
+        size_dimension: `${form.size_value} ${form.size_unit}`,
         category: form.category,
         feature_tags: form.feature_tags_input.split(',').map(t => t.trim()).filter(Boolean),
         purchase_date: form.purchase_date,
@@ -319,7 +327,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                 <div className="flex items-center gap-1">
                   <Ruler size={12} className="text-slate-500" />
                   <span className="text-slate-500">Size</span>
-                  <span className="font-semibold text-slate-200 ml-auto">{plot.size_dimension}</span>
+                  <span className="font-semibold text-slate-200 ml-auto">{(plot as any).size_value ?? ''} {(plot as any).size_unit ?? plot.size_dimension}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <MapPin size={12} className="text-slate-500" />
@@ -449,9 +457,15 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   className="input-base" placeholder="e.g. 102" />
               </div>
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Size / Dimensions</label>
-                <input type="text" value={form.size_dimension} onChange={(e) => setForm({ ...form, size_dimension: e.target.value })}
-                  className="input-base" placeholder="e.g. 5 Marla / 10 Marla / 1 Kanal" />
+                <label className="text-xs text-slate-400 block mb-1">Size Value</label>
+                <input type="number" min={0} step={0.25} value={form.size_value || ''} onChange={(e) => setForm({ ...form, size_value: Number(e.target.value) || 0 })}
+                  className="input-base" placeholder="e.g. 5" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Unit</label>
+                <select value={form.size_unit} onChange={(e) => setForm({ ...form, size_unit: e.target.value })} className="input-base">
+                  {SIZE_UNIT_OPTIONS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Category</label>

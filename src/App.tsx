@@ -199,7 +199,10 @@ const App: React.FC = () => {
               </button>
 
               {/* Quick New Deal */}
-              <button className="hidden sm:flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md shadow-emerald-950/40">
+              <button
+                onClick={() => setActiveModule('cash-counter')}
+                className="hidden sm:flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md shadow-emerald-950/40"
+              >
                 <Plus size={16} />
                 <span>New Deal</span>
               </button>
@@ -218,7 +221,7 @@ const App: React.FC = () => {
   function renderModuleContent(module: string) {
     switch (module) {
       case 'dashboard':
-        return <Dashboard branchId={branchId} />;
+        return <Dashboard branchId={branchId} onNavigate={setActiveModule} />;
       case 'inventory':
         return <PlotInventory branchId={branchId} currentUser={user!} />;
       case 'plazas':

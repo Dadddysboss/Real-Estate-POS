@@ -1,240 +1,349 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Wallet, Lock, Unlock, Plus, Minus, RotateCcw, History, Receipt, Printer,
-  AlertTriangle, CheckCircle2, ArrowDownLeft, ArrowUpRight, Banknote, ShieldAlert, X,
+  Wallet, Banknote, Receipt, Printer, CheckCircle2, AlertTriangle, X,
+  CalendarDays, CreditCard, User, MapPin,
+  ChevronDown,
 } from 'lucide-react';
-import {
-  CashSession, CashTransaction, DenominationBreakdown,
-  EMPTY_DENOMINATIONS, CASH_CATEGORIES,
-  fetchActiveSession, fetchSessionHistory, fetchCashTransactions,
-  calculateSessionExpectedBalance, openCashSession, closeCashSession,
-  recordDenominationAudit, createCashIn, createCashOut,
-  computeDenominationTotal, generateThermalReceipt, printThermalReceipt,
-} from '../../services/cash.service';
-
-const DENOM_META: { key: keyof DenominationBreakdown; label: string; value: number }[] = [
-  { key: 'notes_5000', label: 'Rs. 5000', value: 5000 },
-  { key: 'notes_1000', label: 'Rs. 1000', value: 1000 },
-  { key: 'notes_500', label: 'Rs. 500', value: 500 },
-  { key: 'notes_100', label: 'Rs. 100', value: 100 },
-  { key: 'notes_50', label: 'Rs. 50', value: 50 },
-  { key: 'notes_20', label: 'Rs. 20', value: 20 },
-  { key: 'notes_10', label: 'Rs. 10', value: 10 },
-];
-
-const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 interface CashCounterProps {
   branchId: string;
   currentUser: { id: string; username: string; fullName: string };
 }
 
-interface CashTxnForm {
-  amount: number;
+interface PlotOption {
+  id: string;
+  plot_number: string;
+  society_name: string;
+  block_phase: string;
+  size_dimension: string;
+  target_asking_price: number;
   category: string;
-  notes: string;
-  counterparty: string;
 }
 
-const emptyTxnForm = (category: string): CashTxnForm => ({ amount: 0, category, notes: '', counterparty: '' });
+interface CashSaleForm {
+  plotId: string;
+  buyerName: string;
+  buyerPhone: string;
+  buyerCnic: string;
+  salePrice: number;
+  taxRate: number;
+  registrationFee: number;
+  paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'PAY_ORDER';
+  receiptNotes: string;
+}
+
+interface InstallmentSaleForm {
+  plotId: string;
+  buyerName: string;
+  buyerPhone: string;
+  buyerCnic: string;
+  totalPrice: number;
+  downPayment: number;
+  monthlyInstallment: number;
+  planDurationMonths: number;
+  startDate: string;
+  dueDayOfMonth: number;
+  receiptNotes: string;
+}
+
+const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
+
+const defaultCashForm: CashSaleForm = {
+  plotId: '', buyerName: '', buyerPhone: '', buyerCnic: '',
+  salePrice: 0, taxRate: 0, registrationFee: 0,
+  paymentMethod: 'CASH', receiptNotes: '',
+};
+
+const defaultInstallmentForm: InstallmentSaleForm = {
+  plotId: '', buyerName: '', buyerPhone: '', buyerCnic: '',
+  totalPrice: 0, downPayment: 0, monthlyInstallment: 0,
+  planDurationMonths: 0, startDate: '', dueDayOfMonth: 1, receiptNotes: '',
+};
 
 export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser }) => {
+  const [activeTab, setActiveTab] = useState<'instant' | 'installment'>('instant');
+  const [plots, setPlots] = useState<PlotOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [activeSession, setActiveSession] = useState<CashSession | null>(null);
-  const [sessions, setSessions] = useState<CashSession[]>([]);
-  const [transactions, setTransactions] = useState<CashTransaction[]>([]);
-  const [systemPosition, setSystemPosition] = useState<{ totalIn: number; totalOut: number; expected: number } | null>(null);
-  const [denominations, setDenominations] = useState<DenominationBreakdown>({ ...EMPTY_DENOMINATIONS });
-  const [openingFloat, setOpeningFloat] = useState(0);
-  const [openingDenoms, setOpeningDenoms] = useState<DenominationBreakdown>({ ...EMPTY_DENOMINATIONS });
-  const [handoverTo, setHandoverTo] = useState('');
-  const [cashInForm, setCashInForm] = useState<CashTxnForm>(emptyTxnForm(CASH_CATEGORIES.CASH_IN[0]));
-  const [cashOutForm, setCashOutForm] = useState<CashTxnForm>(emptyTxnForm(CASH_CATEGORIES.CASH_OUT[0]));
-  const [showHistory, setShowHistory] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [preview, setPreview] = useState<{ title: string; text: string } | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
+  const [receiptText, setReceiptText] = useState('');
 
-  const countedTotal = computeDenominationTotal(denominations);
-  const systemBalance = systemPosition?.expected ?? 0;
-  const variance = countedTotal - systemBalance;
-  const openingTally = computeDenominationTotal(openingDenoms);
+  const [cashForm, setCashForm] = useState<CashSaleForm>({ ...defaultCashForm });
+  const [installmentForm, setInstallmentForm] = useState<InstallmentSaleForm>({ ...defaultInstallmentForm });
 
-  const loadData = useCallback(async () => {
+  const fetchAvailablePlots = useCallback(async () => {
     setLoading(true);
     try {
-      const active = await fetchActiveSession(branchId);
-      setActiveSession(active);
-      setSessions(await fetchSessionHistory(branchId, 20));
-      if (active) {
-        const [txns, position] = await Promise.all([
-          fetchCashTransactions(branchId, 100, active.opened_at),
-          calculateSessionExpectedBalance(active),
-        ]);
-        setTransactions(txns);
-        setSystemPosition(position);
-        setOpeningFloat(active.opening_balance);
-      } else {
-        setTransactions([]);
-        setSystemPosition(null);
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load cash counter' });
+      const res = await window.api.dbQuery<PlotOption>(
+        `SELECT id, plot_number, society_name, block_phase, size_dimension, target_asking_price, category
+         FROM inventory_plots WHERE branch_id = ? AND status = 'AVAILABLE' ORDER BY society_name, plot_number`,
+        [branchId]
+      );
+      if (res.success && res.data) setPlots(res.data);
+    } catch {
+      setMessage({ type: 'error', text: 'Failed to load available plots.' });
     }
     setLoading(false);
   }, [branchId]);
 
+  useEffect(() => { fetchAvailablePlots(); }, [fetchAvailablePlots]);
+
   useEffect(() => {
-    setDenominations({ ...EMPTY_DENOMINATIONS });
-    void loadData();
-  }, [loadData]);
-
-  const showReceipt = (title: string, text: string) => setPreview({ title, text });
-
-  const handleOpenDrawer = async () => {
-    setActionLoading(true);
-    setMessage(null);
-    try {
-      const sessionId = await openCashSession(branchId, currentUser.id, currentUser.fullName, openingFloat, openingDenoms);
-      setActiveSession(await fetchActiveSession(branchId));
-      showReceipt('Drawer Opening Voucher', generateThermalReceipt({
-        type: 'DRAWER_OPENING',
-        transactionId: sessionId,
-        branchName: branchId,
-        userName: currentUser.fullName,
-        amount: openingFloat,
-        category: 'DRAWER_OPENING',
-        notes: `Opening float tallied: ${fmt(openingTally)}`,
-        denominations: openingDenoms,
-        timestamp: new Date().toISOString(),
-      }));
-      setDenominations({ ...EMPTY_DENOMINATIONS });
-      setMessage({ type: 'success', text: `Drawer session ${sessionId} opened successfully.` });
-      await loadData();
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to open drawer' });
+    if (message) {
+      const t = setTimeout(() => setMessage(null), 6000);
+      return () => clearTimeout(t);
     }
-    setActionLoading(false);
+    return undefined;
+  }, [message]);
+
+  const selectedPlotCash = plots.find((p) => p.id === cashForm.plotId);
+  const selectedPlotInst = plots.find((p) => p.id === installmentForm.plotId);
+
+  const cashSalePrice = selectedPlotCash ? selectedPlotCash.target_asking_price : cashForm.salePrice;
+  const cashTaxAmount = cashSalePrice * cashForm.taxRate / 100;
+  const cashTotalWithTax = cashSalePrice + cashTaxAmount + cashForm.registrationFee;
+
+  const instTotal = selectedPlotInst ? selectedPlotInst.target_asking_price : installmentForm.totalPrice;
+  const instBalanceAfterDown = instTotal - installmentForm.downPayment;
+  const instMonthly = installmentForm.planDurationMonths > 0 && installmentForm.downPayment < instTotal
+    ? Math.ceil(instBalanceAfterDown / installmentForm.planDurationMonths)
+    : installmentForm.monthlyInstallment;
+
+  const handleCashPlotChange = (plotId: string) => {
+    const plot = plots.find((p) => p.id === plotId);
+    setCashForm({
+      ...cashForm,
+      plotId,
+      salePrice: plot ? plot.target_asking_price : 0,
+    });
   };
 
-  const handleRecordCount = async () => {
-    if (!activeSession) return;
-    setActionLoading(true);
-    setMessage(null);
-    try {
-      const result = await recordDenominationAudit(activeSession, currentUser.id, currentUser.fullName, denominations);
-      showReceipt('Denomination Audit Receipt', generateThermalReceipt({
-        type: 'DENOMINATION_AUDIT',
-        transactionId: result.adjustmentId,
-        branchName: branchId,
-        userName: currentUser.fullName,
-        amount: result.actual,
-        category: 'DENOMINATION_AUDIT',
-        notes: `Physical count recorded against session ${activeSession.id}`,
-        denominations,
-        timestamp: new Date().toISOString(),
-        variance: result.variance,
-        expected: result.expected,
-      }));
-      setMessage({
-        type: result.variance === 0 ? 'success' : 'error',
-        text: result.variance === 0
-          ? `Count reconciled perfectly at ${fmt(result.actual)}.`
-          : `Variance ${result.variance > 0 ? '+' : ''}${fmt(result.variance)} booked as CASH_ADJUSTMENT.`,
-      });
-      await loadData();
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record count' });
-    }
-    setActionLoading(false);
+  const handleInstallmentPlotChange = (plotId: string) => {
+    const plot = plots.find((p) => p.id === plotId);
+    setInstallmentForm({
+      ...installmentForm,
+      plotId,
+      totalPrice: plot ? plot.target_asking_price : 0,
+    });
   };
 
-  const handleCloseSession = async () => {
-    if (!activeSession) return;
-    if (!handoverTo.trim()) {
-      setMessage({ type: 'error', text: 'Enter the staff member receiving the drawer for the handover voucher.' });
+  const generateCashReceipt = (saleId: string, plot: PlotOption, total: number, taxAmt: number): string => {
+    const lines: string[] = [];
+    lines.push('═══════════════════════════════════════════════');
+    lines.push('          INSTANT CASH SALE RECEIPT');
+    lines.push('═══════════════════════════════════════════════');
+    lines.push(`  Receipt # : ${saleId}`);
+    lines.push(`  Date      : ${new Date().toLocaleDateString('en-PK')}`);
+    lines.push(`  Branch    : ${branchId}`);
+    lines.push(`  Cashier   : ${currentUser.fullName}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Buyer     : ${cashForm.buyerName}`);
+    if (cashForm.buyerPhone) lines.push(`  Phone     : ${cashForm.buyerPhone}`);
+    if (cashForm.buyerCnic) lines.push(`  CNIC      : ${cashForm.buyerCnic}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Plot      : ${plot.plot_number} (${plot.society_name})`);
+    lines.push(`  Society   : ${plot.society_name} Block ${plot.block_phase}`);
+    lines.push(`  Size      : ${plot.size_dimension}`);
+    lines.push(`  Category  : ${plot.category}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Sale Price      : ${fmt(cashSalePrice)}`);
+    if (cashForm.taxRate > 0) lines.push(`  Tax (${cashForm.taxRate}%)    : ${fmt(taxAmt)}`);
+    if (cashForm.registrationFee > 0) lines.push(`  Reg. Fee        : ${fmt(cashForm.registrationFee)}`);
+    lines.push(`  TOTAL DUE       : ${fmt(total)}`);
+    lines.push(`  Payment Method  : ${cashForm.paymentMethod.replace('_', ' ')}`);
+    lines.push('───────────────────────────────────────────────');
+    if (cashForm.receiptNotes) lines.push(`  Notes: ${cashForm.receiptNotes}`);
+    lines.push('═══════════════════════════════════════════════');
+    lines.push('          Thank you for your purchase!');
+    lines.push('═══════════════════════════════════════════════');
+    return lines.join('\n');
+  };
+
+  const generateInstallmentReceipt = (planId: string, plot: PlotOption): string => {
+    const lines: string[] = [];
+    lines.push('═══════════════════════════════════════════════');
+    lines.push('         INSTALLMENT SALE RECEIPT');
+    lines.push('═══════════════════════════════════════════════');
+    lines.push(`  Plan ID   : ${planId}`);
+    lines.push(`  Date      : ${new Date().toLocaleDateString('en-PK')}`);
+    lines.push(`  Branch    : ${branchId}`);
+    lines.push(`  Cashier   : ${currentUser.fullName}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Buyer     : ${installmentForm.buyerName}`);
+    if (installmentForm.buyerPhone) lines.push(`  Phone     : ${installmentForm.buyerPhone}`);
+    if (installmentForm.buyerCnic) lines.push(`  CNIC      : ${installmentForm.buyerCnic}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Plot      : ${plot.plot_number} (${plot.society_name})`);
+    lines.push(`  Size      : ${plot.size_dimension}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  Total Price          : ${fmt(instTotal)}`);
+    lines.push(`  Down Payment         : ${fmt(installmentForm.downPayment)}`);
+    lines.push(`  Balance to Finance   : ${fmt(instBalanceAfterDown)}`);
+    lines.push(`  Monthly Installment  : ${fmt(instMonthly)}`);
+    lines.push(`  Plan Duration        : ${installmentForm.planDurationMonths} months`);
+    lines.push(`  Due Day of Month     : ${installmentForm.dueDayOfMonth}`);
+    lines.push(`  Start Date           : ${installmentForm.startDate}`);
+    lines.push('───────────────────────────────────────────────');
+    lines.push(`  STATUS: BOOKED`);
+    lines.push('═══════════════════════════════════════════════');
+    lines.push('          Thank you for your purchase!');
+    lines.push('═══════════════════════════════════════════════');
+    return lines.join('\n');
+  };
+
+  const handleCashSale = async () => {
+    if (!cashForm.plotId || !cashForm.buyerName.trim() || !cashForm.buyerPhone.trim()) {
+      setMessage({ type: 'error', text: 'Select a plot and fill buyer name & phone.' });
       return;
     }
-    setActionLoading(true);
-    setMessage(null);
-    try {
-      const result = await closeCashSession(activeSession.id, currentUser.id, currentUser.fullName, denominations, handoverTo.trim());
-      showReceipt('Session Handover Voucher', generateThermalReceipt({
-        type: 'HANDOVER_VOUCHER',
-        transactionId: activeSession.id,
-        branchName: branchId,
-        userName: currentUser.fullName,
-        amount: result.actual,
-        category: 'DRAWER_CLOSING',
-        notes: `Drawer closed and handed over. ${result.variance !== 0 ? `Variance adjusted via CASH_ADJUSTMENT.` : 'Zero variance — fully reconciled.'}`,
-        denominations,
-        timestamp: new Date().toISOString(),
-        variance: result.variance,
-        expected: result.expected,
-        handoverTo: handoverTo.trim(),
-      }));
-      setMessage({ type: 'success', text: `Session closed. Counted ${fmt(result.actual)} vs system ${fmt(result.expected)}.` });
-      setHandoverTo('');
-      setDenominations({ ...EMPTY_DENOMINATIONS });
-      await loadData();
-    } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to close session' });
-    }
-    setActionLoading(false);
-  };
-
-  const handleCashMovement = async (direction: 'CASH_IN' | 'CASH_OUT') => {
-    if (!activeSession) return;
-    const form = direction === 'CASH_IN' ? cashInForm : cashOutForm;
-    if (form.amount <= 0 || !Number.isFinite(form.amount)) {
-      setMessage({ type: 'error', text: 'Enter a valid amount.' });
+    if (cashSalePrice <= 0) {
+      setMessage({ type: 'error', text: 'Sale price must be greater than zero.' });
       return;
     }
-    if (!form.counterparty.trim()) {
-      setMessage({ type: 'error', text: direction === 'CASH_IN' ? 'Enter who paid in (received from).' : 'Enter who receives the cash (handed over to).' });
-      return;
-    }
-    setActionLoading(true);
+    setSubmitting(true);
     setMessage(null);
     try {
-      const id = direction === 'CASH_IN'
-        ? await createCashIn(branchId, currentUser.id, Math.round(form.amount), form.category, form.notes, form.counterparty.trim(), { userName: currentUser.fullName })
-        : await createCashOut(branchId, currentUser.id, Math.round(form.amount), form.category, form.notes, form.counterparty.trim(), { userName: currentUser.fullName });
-      showReceipt(direction === 'CASH_IN' ? 'Cash Deposit Receipt' : 'Cash Withdrawal Receipt', generateThermalReceipt({
-        type: direction,
-        transactionId: id,
-        branchName: branchId,
-        userName: currentUser.fullName,
-        amount: Math.round(form.amount),
-        category: form.category,
-        notes: form.notes,
-        timestamp: new Date().toISOString(),
-      }));
-      setCashInForm(emptyTxnForm(cashInForm.category));
-      setCashOutForm(emptyTxnForm(cashOutForm.category));
-      setMessage({ type: 'success', text: `${direction === 'CASH_IN' ? 'Deposit' : 'Withdrawal'} of ${fmt(form.amount)} recorded.` });
-      await loadData();
+      const saleId = `SALE_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      const plot = plots.find((p) => p.id === cashForm.plotId)!;
+
+      const insertSale = await window.api.dbExecute(
+        `INSERT INTO sales_transactions (
+          id, plot_id, buyer_name, buyer_phone, buyer_cnic,
+          final_sale_price, cost_basis, development_costs,
+          agent_commission, government_taxes, net_profit_calculated,
+          payment_method, agent_id, sale_date, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          saleId,
+          cashForm.plotId,
+          cashForm.buyerName.trim(),
+          cashForm.buyerPhone.trim(),
+          cashForm.buyerCnic.trim(),
+          cashTotalWithTax,
+          cashSalePrice,
+          Math.round(cashTaxAmount),
+          cashTotalWithTax,
+          cashForm.paymentMethod,
+        ]
+      );
+      if (!insertSale.success) throw new Error(insertSale.error || 'Failed to record sale');
+
+      const updatePlot = await window.api.dbExecute(
+        `UPDATE inventory_plots SET status = 'SOLD', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [cashForm.plotId]
+      );
+      if (!updatePlot.success) throw new Error(updatePlot.error || 'Failed to update plot status');
+
+      const receipt = generateCashReceipt(saleId, plot, cashTotalWithTax, cashTaxAmount);
+      setReceiptText(receipt);
+      setShowReceipt(true);
+      setMessage({ type: 'success', text: `Sale ${saleId} recorded successfully! Plot marked as SOLD.` });
+      setCashForm({ ...defaultCashForm });
+      fetchAvailablePlots();
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record cash movement' });
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record sale' });
     }
-    setActionLoading(false);
+    setSubmitting(false);
   };
 
-  const printPreviewNow = async () => {
-    if (!preview) return;
+  const handleInstallmentSale = async () => {
+    if (!installmentForm.plotId || !installmentForm.buyerName.trim() || !installmentForm.buyerPhone.trim()) {
+      setMessage({ type: 'error', text: 'Select a plot and fill buyer name & phone.' });
+      return;
+    }
+    if (instTotal <= 0) {
+      setMessage({ type: 'error', text: 'Total price must be greater than zero.' });
+      return;
+    }
+    if (installmentForm.downPayment < 0) {
+      setMessage({ type: 'error', text: 'Down payment cannot be negative.' });
+      return;
+    }
+    if (installmentForm.planDurationMonths <= 0) {
+      setMessage({ type: 'error', text: 'Plan duration must be at least 1 month.' });
+      return;
+    }
+    if (!installmentForm.startDate) {
+      setMessage({ type: 'error', text: 'Select a start date.' });
+      return;
+    }
+    setSubmitting(true);
+    setMessage(null);
     try {
-      await printThermalReceipt(preview.text);
-      setMessage({ type: 'success', text: 'Receipt sent to thermal printer.' });
+      const planId = `PLAN_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      const plot = plots.find((p) => p.id === installmentForm.plotId)!;
+
+      const insertPlan = await window.api.dbExecute(
+        `INSERT INTO installment_plans (
+          id, plot_id, buyer_name, buyer_phone, buyer_cnic,
+          total_sale_price, down_payment, plan_duration_months, monthly_installment_amount,
+          start_date, due_day_of_month, grace_period_days, late_penalty_fee, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 5, 0, 'ACTIVE', CURRENT_TIMESTAMP)`,
+        [
+          planId,
+          installmentForm.plotId,
+          installmentForm.buyerName.trim(),
+          installmentForm.buyerPhone.trim(),
+          installmentForm.buyerCnic.trim(),
+          instTotal,
+          installmentForm.downPayment,
+          installmentForm.planDurationMonths,
+          instMonthly,
+          installmentForm.startDate,
+          installmentForm.dueDayOfMonth,
+        ]
+      );
+      if (!insertPlan.success) throw new Error(insertPlan.error || 'Failed to create installment plan');
+
+      for (let i = 1; i <= installmentForm.planDurationMonths; i++) {
+        const schedId = `SCHED_${planId}_${i}`;
+        const dueDate = new Date(`${installmentForm.startDate}T00:00:00`);
+        dueDate.setMonth(dueDate.getMonth() + i);
+        dueDate.setDate(installmentForm.dueDayOfMonth);
+        const isLast = i === installmentForm.planDurationMonths;
+        const amountDue = isLast
+          ? Math.max(0, instBalanceAfterDown - instMonthly * (installmentForm.planDurationMonths - 1))
+          : instMonthly;
+
+        const insertSched = await window.api.dbExecute(
+          `INSERT INTO installment_schedules (
+            id, plan_id, installment_number, due_date, amount_due, amount_paid,
+            late_fine_charged, discount_applied, payment_date, payment_method, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, NULL, NULL, 'PENDING', CURRENT_TIMESTAMP)`,
+          [schedId, planId, i, dueDate.toISOString().split('T')[0], amountDue]
+        );
+        if (!insertSched.success) throw new Error(insertSched.error || 'Failed to create installment schedule');
+      }
+
+      const updatePlot = await window.api.dbExecute(
+        `UPDATE inventory_plots SET status = 'BOOKED', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [installmentForm.plotId]
+      );
+      if (!updatePlot.success) throw new Error(updatePlot.error || 'Failed to update plot status');
+
+      const receipt = generateInstallmentReceipt(planId, plot);
+      setReceiptText(receipt);
+      setShowReceipt(true);
+      setMessage({ type: 'success', text: `Installment plan ${planId} created! Plot marked as BOOKED.` });
+      setInstallmentForm({ ...defaultInstallmentForm });
+      fetchAvailablePlots();
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create installment plan' });
+    }
+    setSubmitting(false);
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!receiptText) return;
+    try {
+      const res = await window.api.printReceipt(receiptText);
+      if (!res.success) throw new Error(res.error || 'Print failed');
+      setMessage({ type: 'success', text: 'Receipt sent to printer.' });
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Print failed' });
     }
   };
-
-  if (loading) {
-    return <div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading Cash Counter...</div>;
-  }
-
-  const locked = !activeSession;
 
   return (
     <div className="space-y-6">
@@ -242,18 +351,13 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Wallet size={24} className="text-emerald-400" /> Cash Counter & Reconciliation
+            <Wallet size={24} className="text-emerald-400" /> Cash Counter
           </h2>
-          <p className="text-sm text-slate-400">Module 4 — Drawer Sessions, Multi-Denomination Counting & Variance Audit</p>
+          <p className="text-sm text-slate-400">Instant Sales & Installment Plans</p>
         </div>
-        <button
-          onClick={() => setShowHistory(!showHistory)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl glass-card text-sm text-slate-300 hover:text-white"
-        >
-          <History size={16} /> {showHistory ? 'Hide' : 'Session'} History
-        </button>
       </div>
 
+      {/* Message */}
       {message && (
         <div className={`flex items-center gap-3 p-4 rounded-xl border text-sm font-medium ${message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
           {message.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
@@ -262,282 +366,481 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
         </div>
       )}
 
-      {/* Drawer Session Control */}
-      <div className="glass-card p-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          {locked ? (
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-slate-500/10 text-slate-400 rounded-xl border border-slate-500/30"><Lock size={22} /></div>
-              <div>
-                <p className="text-sm font-semibold text-white">Counter Locked — No Active Drawer</p>
-                <p className="text-xs text-slate-400">Open a session with an opening float to activate the cash counter.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/30"><Unlock size={22} /></div>
-              <div>
-                <p className="text-sm font-semibold text-white">Counter Unlocked — Session Active</p>
-                <p className="text-xs font-mono text-slate-400">{activeSession.id} • Opened {new Date(activeSession.opened_at).toLocaleString('en-PK')}</p>
-              </div>
-            </div>
-          )}
-
-          {locked ? (
-            <div className="flex items-end gap-3 flex-wrap">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Opening Float (PKR)</label>
-                <input
-                  type="number" min={0} value={openingFloat || ''}
-                  onChange={(e) => setOpeningFloat(Math.max(0, Math.round(Number(e.target.value) || 0)))}
-                  placeholder="0"
-                  className="w-44 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Tally From Notes Below (PKR)</label>
-                <div className="px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl font-mono text-sm text-emerald-400">{fmt(openingTally)}</div>
-              </div>
-              <button
-                onClick={handleOpenDrawer}
-                disabled={actionLoading || openingFloat <= 0 || openingTally !== openingFloat}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-emerald-950/50"
-              >
-                <Unlock size={16} /> Open Drawer
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-end gap-3 flex-wrap">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Handover Voucher — Receiver Name</label>
-                <input
-                  type="text" value={handoverTo} onChange={(e) => setHandoverTo(e.target.value)}
-                  placeholder="e.g. Cashier Shahid"
-                  className="w-52 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-rose-500"
-                />
-              </div>
-              <button
-                onClick={handleCloseSession}
-                disabled={actionLoading}
-                className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-rose-950/50"
-              >
-                <Lock size={16} /> Close & Reconcile
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Balance Dashboard */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">System Calculated Balance</p>
-            <p className="text-2xl font-bold font-mono tabular-nums text-white mt-1">{fmt(systemBalance)}</p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {systemPosition ? `In ${fmt(systemPosition.totalIn)} • Out ${fmt(systemPosition.totalOut)}` : 'No active session'}
-            </p>
-          </div>
-          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-            <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">Actual Counter Cash (Counted)</p>
-            <p className="text-2xl font-bold font-mono tabular-nums text-sky-400 mt-1">{fmt(countedTotal)}</p>
-            <p className="text-[11px] text-slate-500 mt-1">Live denomination tally</p>
-          </div>
-          <div className={`rounded-xl p-4 border ${variance === 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
-            <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Real-Time Variance</p>
-            <p className={`text-2xl font-bold font-mono tabular-nums mt-1 ${variance === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {variance >= 0 ? '+' : ''}{fmt(Math.abs(variance) * Math.sign(variance) || 0)}
-            </p>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {variance === 0 ? 'Drawer fully reconciled' : variance > 0 ? 'Overage (counted > system)' : 'Shortage (counted < system)'}
-            </p>
-          </div>
-        </div>
+      {/* Tab Selector */}
+      <div className="flex gap-1 bg-slate-900/80 border border-slate-800 rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setActiveTab('instant')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'instant'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Banknote size={16} /> Instant Cash Sale
+        </button>
+        <button
+          onClick={() => setActiveTab('installment')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            activeTab === 'installment'
+              ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/50'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <CalendarDays size={16} /> Installment Sale
+        </button>
       </div>
 
-      {/* Opening Float Denomination Sheet (when locked) */}
-      {locked && (
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Banknote size={18} className="text-amber-400" /> Opening Float Note Tally</h3>
-          <DenominationSheetGrid values={openingDenoms} onChange={setOpeningDenoms} disabled={false} compact />
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
+          Loading available plots...
         </div>
       )}
 
-      {/* Main Grid: Count Sheet + Movements */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 glass-card p-5 relative overflow-hidden">
-          {locked && (
-            <div className="absolute inset-0 z-10 bg-slate-950/70 backdrop-blur-[2px] flex items-center justify-center">
-              <div className="flex items-center gap-2 text-slate-300 text-sm font-semibold bg-slate-900 border border-slate-700 px-4 py-2 rounded-xl">
-                <ShieldAlert size={16} className="text-rose-400" /> Counter locked — open a drawer session to count
-              </div>
-            </div>
-          )}
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2"><Banknote size={18} className="text-emerald-400" /> Multi-Denomination Counting Sheet</h3>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setDenominations({ ...EMPTY_DENOMINATIONS })} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs">
-                <RotateCcw size={13} /> Reset Count
-              </button>
-              <button onClick={handleRecordCount} disabled={locked || actionLoading} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 disabled:bg-slate-800 disabled:text-slate-600 text-amber-400 border border-amber-500/20 rounded-lg text-xs font-semibold">
-                <Receipt size={13} /> Record Count & Reconcile
-              </button>
-            </div>
-          </div>
-          <DenominationSheetGrid values={denominations} onChange={setDenominations} disabled={locked} />
-          <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-slate-500 font-bold">Total Counted Cash</span>
-            <span className="text-xl font-bold font-mono tabular-nums text-emerald-400">{fmt(countedTotal)}</span>
-          </div>
-        </div>
-
-        {/* Cash In / Cash Out */}
+      {/* Instant Cash Sale Tab */}
+      {!loading && activeTab === 'instant' && (
         <div className="space-y-6">
-          <div className="glass-card p-5">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><ArrowDownLeft size={18} className="text-emerald-400" /> Cash In (Deposit)</h3>
-            <div className="space-y-3">
-              <input type="number" min={0} placeholder="Amount (PKR)" value={cashInForm.amount || ''}
-                onChange={(e) => setCashInForm({ ...cashInForm, amount: Number(e.target.value) || 0 })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-500" />
-              <select value={cashInForm.category} onChange={(e) => setCashInForm({ ...cashInForm, category: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500">
-                {CASH_CATEGORIES.CASH_IN.map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}
-              </select>
-              <input type="text" placeholder="Received From" value={cashInForm.counterparty}
-                onChange={(e) => setCashInForm({ ...cashInForm, counterparty: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500" />
-              <input type="text" placeholder="Notes / Reference" value={cashInForm.notes}
-                onChange={(e) => setCashInForm({ ...cashInForm, notes: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500" />
-              <button onClick={() => handleCashMovement('CASH_IN')} disabled={locked || actionLoading}
-                className="w-full py-2.5 btn-primary text-sm flex items-center justify-center gap-2 disabled:opacity-40">
-                <Plus size={16} /> Record Cash In
-              </button>
-            </div>
-          </div>
-
-          <div className="glass-card p-5">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><ArrowUpRight size={18} className="text-rose-400" /> Cash Out (Withdrawal)</h3>
-            <div className="space-y-3">
-              <input type="number" min={0} placeholder="Amount (PKR)" value={cashOutForm.amount || ''}
-                onChange={(e) => setCashOutForm({ ...cashOutForm, amount: Number(e.target.value) || 0 })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-rose-500" />
-              <select value={cashOutForm.category} onChange={(e) => setCashOutForm({ ...cashOutForm, category: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500">
-                {CASH_CATEGORIES.CASH_OUT.map((c) => <option key={c} value={c}>{c.replaceAll('_', ' ')}</option>)}
-              </select>
-              <input type="text" placeholder="Handed Over To" value={cashOutForm.counterparty}
-                onChange={(e) => setCashOutForm({ ...cashOutForm, counterparty: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500" />
-              <input type="text" placeholder="Notes / Voucher Ref" value={cashOutForm.notes}
-                onChange={(e) => setCashOutForm({ ...cashOutForm, notes: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500" />
-              <button onClick={() => handleCashMovement('CASH_OUT')} disabled={locked || actionLoading}
-                className="w-full py-2.5 btn-danger text-sm flex items-center justify-center gap-2 disabled:opacity-40">
-                <Minus size={16} /> Record Cash Out
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Session Ledger */}
-      {!locked && (
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-bold text-white mb-4">Session Cash Ledger ({transactions.length} entries)</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase font-semibold">
-                  <th className="pb-2 pr-4">Time</th>
-                  <th className="pb-2 pr-4">Type</th>
-                  <th className="pb-2 pr-4">Category</th>
-                  <th className="pb-2 pr-4">Party</th>
-                  <th className="pb-2 pr-4">Notes</th>
-                  <th className="pb-2 text-right">Amount (PKR)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {transactions.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-slate-500">No cash movements recorded yet in this session.</td></tr>
+          {/* Plot Selection */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <MapPin size={18} className="text-emerald-400" /> Plot Selection
+            </h3>
+            {plots.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">
+                No available plots found. Add plots to inventory first.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-3">
+                  <label className="text-xs text-slate-400 block mb-1">Select Plot *</label>
+                  <div className="relative">
+                    <select
+                      value={cashForm.plotId}
+                      onChange={(e) => handleCashPlotChange(e.target.value)}
+                      className="w-full appearance-none bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 pr-10"
+                    >
+                      <option value="">-- Choose an available plot --</option>
+                      {plots.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.society_name} | Block {p.block_phase} | Plot #{p.plot_number} | {p.size_dimension} | {fmt(p.target_asking_price)}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                {selectedPlotCash && (
+                  <div className="md:col-span-2 lg:col-span-3 grid grid-cols-2 md:grid-cols-5 gap-3 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Plot #</p>
+                      <p className="text-sm font-mono text-white mt-0.5">{selectedPlotCash.plot_number}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Society</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotCash.society_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Block</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotCash.block_phase}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Size</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotCash.size_dimension}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Category</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotCash.category}</p>
+                    </div>
+                  </div>
                 )}
-                {transactions.map((t) => (
-                  <tr key={t.id}>
-                    <td className="py-2.5 pr-4 text-slate-400 font-mono whitespace-nowrap">{new Date(t.created_at).toLocaleTimeString('en-PK')}</td>
-                    <td className="py-2.5 pr-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.transaction_type === 'CASH_IN' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                        {t.transaction_type === 'CASH_IN' ? 'IN' : 'OUT'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4 text-slate-300">{t.category.replaceAll('_', ' ')}</td>
-                    <td className="py-2.5 pr-4 text-slate-400">{t.received_by || t.handed_over_by || '—'}</td>
-                    <td className="py-2.5 pr-4 text-slate-500 max-w-[240px] truncate">{t.notes || '—'}</td>
-                    <td className="py-2.5 text-right font-mono font-bold text-white whitespace-nowrap">{fmt(t.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              </div>
+            )}
+          </div>
+
+          {/* Buyer Info */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <User size={18} className="text-sky-400" /> Buyer Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Buyer Name *</label>
+                <input
+                  type="text"
+                  value={cashForm.buyerName}
+                  onChange={(e) => setCashForm({ ...cashForm, buyerName: e.target.value })}
+                  placeholder="Full name"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Phone *</label>
+                <input
+                  type="tel"
+                  value={cashForm.buyerPhone}
+                  onChange={(e) => setCashForm({ ...cashForm, buyerPhone: e.target.value })}
+                  placeholder="0300-1234567"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">CNIC</label>
+                <input
+                  type="text"
+                  value={cashForm.buyerCnic}
+                  onChange={(e) => setCashForm({ ...cashForm, buyerCnic: e.target.value })}
+                  placeholder="42101-1234567-1"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Payment & Pricing */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <CreditCard size={18} className="text-amber-400" /> Payment & Pricing
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Sale Price (Rs.)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={cashForm.salePrice || ''}
+                  onChange={(e) => setCashForm({ ...cashForm, salePrice: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Tax Rate (%)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={cashForm.taxRate || ''}
+                  onChange={(e) => setCashForm({ ...cashForm, taxRate: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Registration Fee (Rs.)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={cashForm.registrationFee || ''}
+                  onChange={(e) => setCashForm({ ...cashForm, registrationFee: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Payment Method *</label>
+                <div className="relative">
+                  <select
+                    value={cashForm.paymentMethod}
+                    onChange={(e) => setCashForm({ ...cashForm, paymentMethod: e.target.value as CashSaleForm['paymentMethod'] })}
+                    className="w-full appearance-none bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 pr-10"
+                  >
+                    <option value="CASH">CASH</option>
+                    <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                    <option value="PAY_ORDER">PAY ORDER</option>
+                  </select>
+                  <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Sale Price</p>
+                <p className="text-lg font-mono font-bold text-white mt-1">{fmt(cashSalePrice)}</p>
+              </div>
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Tax + Fees</p>
+                <p className="text-lg font-mono font-bold text-amber-400 mt-1">{fmt(cashTaxAmount + cashForm.registrationFee)}</p>
+              </div>
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-emerald-300 font-bold">Total Due</p>
+                <p className="text-lg font-mono font-bold text-emerald-400 mt-1">{fmt(cashTotalWithTax)}</p>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="mt-4">
+              <label className="text-xs text-slate-400 block mb-1">Receipt Notes</label>
+              <input
+                type="text"
+                value={cashForm.receiptNotes}
+                onChange={(e) => setCashForm({ ...cashForm, receiptNotes: e.target.value })}
+                placeholder="Optional notes for receipt"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
+          {/* Submit */}
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={() => setCashForm({ ...defaultCashForm })}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm"
+            >
+              Reset Form
+            </button>
+            <button
+              onClick={handleCashSale}
+              disabled={submitting || plots.length === 0}
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-emerald-950/50"
+            >
+              <Receipt size={16} />
+              {submitting ? 'Processing...' : 'Complete Cash Sale'}
+            </button>
           </div>
         </div>
       )}
 
-      {/* Session History */}
-      {showHistory && (
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-bold text-white mb-4">Drawer Session History</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase font-semibold">
-                  <th className="pb-2 pr-4">Session</th>
-                  <th className="pb-2 pr-4">Opened</th>
-                  <th className="pb-2 pr-4">Closed</th>
-                  <th className="pb-2 text-right">Opening</th>
-                  <th className="pb-2 text-right">System</th>
-                  <th className="pb-2 text-right">Counted</th>
-                  <th className="pb-2 text-right">Variance</th>
-                  <th className="pb-2 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {sessions.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-slate-500">No sessions recorded.</td></tr>}
-                {sessions.map((s) => (
-                  <tr key={s.id}>
-                    <td className="py-2.5 pr-4 font-mono text-slate-300">{s.id.slice(0, 18)}…</td>
-                    <td className="py-2.5 pr-4 text-slate-400 whitespace-nowrap">{new Date(s.opened_at).toLocaleString('en-PK')}</td>
-                    <td className="py-2.5 pr-4 text-slate-400 whitespace-nowrap">{s.closed_at ? new Date(s.closed_at).toLocaleString('en-PK') : '—'}</td>
-                    <td className="py-2.5 pr-4 text-right font-mono text-white">{fmt(s.opening_balance)}</td>
-                    <td className="py-2.5 pr-4 text-right font-mono text-slate-300">{s.expected_balance != null ? fmt(s.expected_balance) : '—'}</td>
-                    <td className="py-2.5 pr-4 text-right font-mono text-sky-400">{s.closing_balance != null ? fmt(s.closing_balance) : '—'}</td>
-                    <td className={`py-2.5 pr-4 text-right font-mono font-bold ${s.variance == null ? 'text-slate-500' : s.variance === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {s.variance != null ? `${s.variance >= 0 ? '+' : '-'}${fmt(Math.abs(s.variance))}` : '—'}
-                    </td>
-                    <td className="py-2.5 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'OPEN' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/10 text-slate-400 border border-slate-500/30'}`}>
-                        {s.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Installment Sale Tab */}
+      {!loading && activeTab === 'installment' && (
+        <div className="space-y-6">
+          {/* Plot Selection */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <MapPin size={18} className="text-sky-400" /> Plot Selection
+            </h3>
+            {plots.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">
+                No available plots found. Add plots to inventory first.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-3">
+                  <label className="text-xs text-slate-400 block mb-1">Select Plot *</label>
+                  <div className="relative">
+                    <select
+                      value={installmentForm.plotId}
+                      onChange={(e) => handleInstallmentPlotChange(e.target.value)}
+                      className="w-full appearance-none bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-sky-500 pr-10"
+                    >
+                      <option value="">-- Choose an available plot --</option>
+                      {plots.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.society_name} | Block {p.block_phase} | Plot #{p.plot_number} | {p.size_dimension} | {fmt(p.target_asking_price)}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+                {selectedPlotInst && (
+                  <div className="md:col-span-2 lg:col-span-3 grid grid-cols-2 md:grid-cols-5 gap-3 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Plot #</p>
+                      <p className="text-sm font-mono text-white mt-0.5">{selectedPlotInst.plot_number}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Society</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotInst.society_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Block</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotInst.block_phase}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Size</p>
+                      <p className="text-sm text-white mt-0.5">{selectedPlotInst.size_dimension}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 font-bold">Asking Price</p>
+                      <p className="text-sm font-mono text-emerald-400 mt-0.5">{fmt(selectedPlotInst.target_asking_price)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Buyer Info */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <User size={18} className="text-sky-400" /> Buyer Information
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Buyer Name *</label>
+                <input
+                  type="text"
+                  value={installmentForm.buyerName}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, buyerName: e.target.value })}
+                  placeholder="Full name"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Phone *</label>
+                <input
+                  type="tel"
+                  value={installmentForm.buyerPhone}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, buyerPhone: e.target.value })}
+                  placeholder="0300-1234567"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">CNIC</label>
+                <input
+                  type="text"
+                  value={installmentForm.buyerCnic}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, buyerCnic: e.target.value })}
+                  placeholder="42101-1234567-1"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Installment Details */}
+          <div className="glass-card p-6">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+              <CalendarDays size={18} className="text-sky-400" /> Installment Plan Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Total Price (Rs.)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={installmentForm.totalPrice || ''}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, totalPrice: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Down Payment (Rs.)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={installmentForm.downPayment || ''}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, downPayment: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Plan Duration (months) *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={installmentForm.planDurationMonths || ''}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, planDurationMonths: Number(e.target.value) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Start Date *</label>
+                <input
+                  type="date"
+                  value={installmentForm.startDate}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, startDate: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Due Day of Month</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={28}
+                  value={installmentForm.dueDayOfMonth}
+                  onChange={(e) => setInstallmentForm({ ...installmentForm, dueDayOfMonth: Number(e.target.value) || 1 })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Monthly Installment (auto-calculated)</label>
+                <div className="px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl font-mono text-sm text-sky-400">
+                  {fmt(instMonthly)}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Balance After Down Payment</label>
+                <div className="px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl font-mono text-sm text-amber-400">
+                  {fmt(instBalanceAfterDown)}
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Total Price</p>
+                <p className="text-lg font-mono font-bold text-white mt-1">{fmt(instTotal)}</p>
+              </div>
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Down Payment</p>
+                <p className="text-lg font-mono font-bold text-emerald-400 mt-1">{fmt(installmentForm.downPayment)}</p>
+              </div>
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Monthly x {installmentForm.planDurationMonths}</p>
+                <p className="text-lg font-mono font-bold text-sky-400 mt-1">{fmt(instMonthly)}</p>
+              </div>
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-[10px] uppercase text-slate-500 font-bold">Status on Submit</p>
+                <p className="text-lg font-bold text-amber-400 mt-1">BOOKED</p>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="mt-4">
+              <label className="text-xs text-slate-400 block mb-1">Receipt Notes</label>
+              <input
+                type="text"
+                value={installmentForm.receiptNotes}
+                onChange={(e) => setInstallmentForm({ ...installmentForm, receiptNotes: e.target.value })}
+                placeholder="Optional notes for receipt"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+              />
+            </div>
+          </div>
+
+          {/* Submit */}
+          <div className="flex items-center justify-end gap-3">
+            <button
+              onClick={() => setInstallmentForm({ ...defaultInstallmentForm })}
+              className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm"
+            >
+              Reset Form
+            </button>
+            <button
+              onClick={handleInstallmentSale}
+              disabled={submitting || plots.length === 0}
+              className="flex items-center gap-2 px-6 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-sky-950/50"
+            >
+              <CalendarDays size={16} />
+              {submitting ? 'Processing...' : 'Create Installment Plan'}
+            </button>
           </div>
         </div>
       )}
 
-      {/* 80mm Thermal Receipt Preview Modal */}
-      {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={() => setPreview(null)}>
+      {/* Receipt Preview Modal */}
+      {showReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={() => setShowReceipt(false)}>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-800">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2"><Receipt size={16} className="text-emerald-400" /> {preview.title} — 80mm Preview</h3>
-              <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Receipt size={16} className="text-emerald-400" /> Sale Receipt — 80mm Preview
+              </h3>
+              <button onClick={() => setShowReceipt(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-4 max-h-[50vh] overflow-y-auto bg-slate-950">
-              <pre className="font-mono text-[11px] leading-relaxed text-slate-200 whitespace-pre">{preview.text}</pre>
+              <pre className="font-mono text-[11px] leading-relaxed text-slate-200 whitespace-pre">{receiptText}</pre>
             </div>
             <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-800">
-              <button onClick={() => setPreview(null)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Close</button>
-              <button onClick={printPreviewNow} className="flex items-center gap-2 px-5 py-2 btn-primary text-xs">
-                <Printer size={14} /> Send to Thermal Printer
+              <button onClick={() => setShowReceipt(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Close</button>
+              <button onClick={handlePrintReceipt} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold">
+                <Printer size={14} /> Print Receipt
               </button>
             </div>
           </div>
@@ -546,44 +849,5 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
     </div>
   );
 };
-
-// ------------------------------------------------------------------
-// Denomination Sheet Grid (reusable)
-// ------------------------------------------------------------------
-
-const DenominationSheetGrid: React.FC<{
-  values: DenominationBreakdown;
-  onChange: (next: DenominationBreakdown) => void;
-  disabled: boolean;
-  compact?: boolean;
-}> = ({ values, onChange, disabled, compact = false }) => (
-  <div className={`grid grid-cols-2 sm:grid-cols-4 ${compact ? 'lg:grid-cols-7' : 'lg:grid-cols-4 xl:grid-cols-7'} gap-3 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
-    {DENOM_META.map((d) => {
-      const count = values[d.key];
-      const subtotal = count * d.value;
-      return (
-        <div key={d.key} className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-400">{d.label}</span>
-            <span className="text-[10px] text-slate-500 font-mono">{subtotal.toLocaleString('en-PK')}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => onChange({ ...values, [d.key]: Math.max(0, count - 1) })}
-              className="w-8 h-8 flex-shrink-0 bg-slate-800 hover:bg-slate-700 rounded-lg flex items-center justify-center">
-              <Minus size={14} className="text-slate-300" />
-            </button>
-            <input type="number" min={0} value={count || ''} placeholder="0" inputMode="numeric"
-              onChange={(e) => onChange({ ...values, [d.key]: Math.max(0, Math.trunc(Number(e.target.value) || 0)) })}
-              className="w-full min-w-0 flex-1 bg-slate-900 border border-slate-700 rounded-lg px-1 py-1.5 text-center text-sm font-mono text-white focus:outline-none focus:border-emerald-500" />
-            <button onClick={() => onChange({ ...values, [d.key]: count + 1 })}
-              className="w-8 h-8 flex-shrink-0 bg-slate-800 hover:bg-slate-700 rounded-lg flex items-center justify-center">
-              <Plus size={14} className="text-slate-300" />
-            </button>
-          </div>
-        </div>
-      );
-    })}
-  </div>
-);
 
 export default CashCounter;

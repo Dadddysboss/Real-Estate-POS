@@ -1,20 +1,11 @@
-import React, { useState } from 'react';
-import { InstallmentPlan, InstallmentSchedule } from '../../types/electron';
+import React, { useState, useEffect } from 'react';
 import {
-  fetchInstallmentPlans,
-  fetchSchedulesByPlan,
-  createInstallmentPlan,
-  recordSchedulePayment,
-  calculatePlanSummary,
-  updateOverdueStatuses,
-  printInstallmentReceipt,
-  fmt,
-} from '../../services/installment.service';
-import { calculateSurcharge, validateSurcharge } from '../../utils/surchargeRules';
-import { generateReceipt, ReceiptItem, ReceiptOptions } from '../../utils/receiptRules';
-import { Search, Calendar, AlertCircle, CheckCircle, Printer, Mail, FileText, DollarSign, Clock, Filter, Plus, Eye, X } from 'lucide-react';
+  MessageSquare, Eye, Plus, CreditCard, Calendar, Check, Clock,
+  Search, X, AlertCircle, CheckCircle, Send, Phone, Hash,
+} from 'lucide-react';
 
-interface InstallmentPlanFormValues {
+interface PlanRow {
+  id: string;
   plot_id: string;
   buyer_name: string;
   buyer_phone: string;
@@ -27,851 +18,716 @@ interface InstallmentPlanFormValues {
   due_day_of_month: number;
   grace_period_days: number;
   late_penalty_fee: number;
-  surcharge_rate: number;
+  status: string;
+  created_at: string;
+  plot_number?: string;
+  society_name?: string;
+  block_phase?: string;
+  size_dimension?: string;
 }
 
-interface PaymentFormValues {
-  schedule_id: string;
+interface ScheduleRow {
+  id: string;
+  plan_id: string;
+  installment_number: number;
+  due_date: string;
+  amount_due: number;
   amount_paid: number;
-  payment_date: string;
-  payment_method: string;
-  discount_applied: number;
   late_fine_charged: number;
+  discount_applied: number;
+  payment_date: string | null;
+  payment_method: string | null;
+  status: string;
+  created_at: string;
 }
+
+interface SummaryStats {
+  totalPlans: number;
+  active: number;
+  completed: number;
+  overdue: number;
+  totalRevenue: number;
+  collected: number;
+  pending: number;
+}
+
+const fmt = (n: number): string => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 const InstallmentEngine: React.FC = () => {
-  const [plans, setPlans] = useState<InstallmentPlan[]>([]);
-  const [schedules, setSchedules] = useState<InstallmentSchedule[]>([]);
-  const [currentPlan, setCurrentPlan] = useState<InstallmentPlan | null>(null);
-  const [search, setSearch] = useState<string>('');
-  const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'COMPLETED' | 'DEFAULTED'>('ALL');
-  const [showPaymentModal, setShowPaymentModal] = useState<boolean>(false);
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
-  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
-  const [paymentForm, setPaymentForm] = useState<PaymentFormValues>({
-    schedule_id: '',
-    amount_paid: 0,
-    payment_date: new Date().toISOString().split('T')[0],
-    payment_method: 'CASH',
-    discount_applied: 0,
-    late_fine_charged: 0,
+  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [stats, setStats] = useState<SummaryStats>({
+    totalPlans: 0,
+    active: 0,
+    completed: 0,
+    overdue: 0,
+    totalRevenue: 0,
+    collected: 0,
+    pending: 0,
   });
-  const [createForm, setCreateForm] = useState<InstallmentPlanFormValues>({
-    plot_id: '',
-    buyer_name: '',
-    buyer_phone: '',
-    buyer_cnic: '',
-    total_sale_price: 0,
-    down_payment: 0,
-    plan_duration_months: 12,
-    monthly_installment_amount: 0,
-    start_date: new Date().toISOString().split('T')[0],
-    due_day_of_month: 1,
-    grace_period_days: 5,
-    late_penalty_fee: 0,
-    surcharge_rate: 0,
-  });
-  const [overdueFilterActive, setOverdueFilterActive] = useState<boolean>(false);
+
+  const [detailPlan, setDetailPlan] = useState<PlanRow | null>(null);
+  const [detailSchedules, setDetailSchedules] = useState<ScheduleRow[]>([]);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
+  const [whatsAppPlan, setWhatsAppPlan] = useState<PlanRow | null>(null);
+  const [whatsAppMessage, setWhatsAppMessage] = useState('');
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+
+  const [paymentPlan, setPaymentPlan] = useState<PlanRow | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentReceiptNo, setPaymentReceiptNo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const loadPlans = async () => {
+    setLoading(true);
     try {
-      const data = await fetchInstallmentPlans();
-      setPlans(data);
+      const sql = `
+        SELECT
+          ip.id, ip.plot_id, ip.buyer_name, ip.buyer_phone, ip.buyer_cnic,
+          ip.total_sale_price, ip.down_payment, ip.plan_duration_months,
+          ip.monthly_installment_amount, ip.start_date, ip.due_day_of_month,
+          ip.grace_period_days, ip.late_penalty_fee, ip.status, ip.created_at,
+          ip.plot_id AS plot_number_key,
+          inv.plot_number, inv.society_name, inv.block_phase, inv.size_dimension
+        FROM installment_plans ip
+        LEFT JOIN inventory_plots inv ON ip.plot_id = inv.id
+        WHERE ip.status = 'ACTIVE'
+        ORDER BY ip.created_at DESC
+      `;
+      const res = await window.api.dbQuery<PlanRow>(sql, []);
+      const planData = res.success ? (res.data || []) : [];
+      setPlans(planData);
+
+      const statsSql = `
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN ip.status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_count,
+          SUM(CASE WHEN ip.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed_count,
+          COALESCE(SUM(ip.total_sale_price), 0) AS total_revenue,
+          COALESCE(SUM(COALESCE(paid.total_collected, 0)), 0) AS collected
+        FROM installment_plans ip
+        LEFT JOIN (
+          SELECT plan_id, SUM(amount_paid) AS total_collected
+          FROM installment_schedules
+          GROUP BY plan_id
+        ) paid ON ip.id = paid.plan_id
+      `;
+      const statsRes = await window.api.dbQuery<{
+        total: number;
+        active_count: number;
+        completed_count: number;
+        total_revenue: number;
+        collected: number;
+      }>(statsSql, []);
+      if (statsRes.success && statsRes.data && statsRes.data.length > 0) {
+        const row = statsRes.data[0];
+        setStats({
+          totalPlans: Number(row.total) || 0,
+          active: Number(row.active_count) || 0,
+          completed: Number(row.completed_count) || 0,
+          overdue: 0,
+          totalRevenue: Number(row.total_revenue) || 0,
+          collected: Number(row.collected) || 0,
+          pending: (Number(row.total_revenue) || 0) - (Number(row.collected) || 0),
+        });
+      }
+
+      const overdueSql = `
+        SELECT COUNT(DISTINCT ip.id) AS overdue_count
+        FROM installment_plans ip
+        INNER JOIN installment_schedules iss ON ip.id = iss.plan_id
+        WHERE ip.status = 'ACTIVE' AND iss.status = 'OVERDUE'
+      `;
+      const overdueRes = await window.api.dbQuery<{ overdue_count: number }>(overdueSql, []);
+      if (overdueRes.success && overdueRes.data && overdueRes.data.length > 0) {
+        setStats(prev => ({
+          ...prev,
+          overdue: Number(overdueRes.data![0].overdue_count) || 0,
+        }));
+      }
     } catch (err) {
       console.error('Failed to load installment plans:', err);
     }
+    setLoading(false);
   };
 
-  const onPlanSelect = async (planId: string) => {
+  useEffect(() => {
+    void loadPlans();
+  }, []);
+
+  const openDetails = async (plan: PlanRow) => {
     try {
-      const plan = plans.find(p => p.id === planId);
-      if (plan) {
-        const scheduleData = await fetchSchedulesByPlan(planId);
-        const updatedSchedules = updateOverdueStatuses(scheduleData, plan.grace_period_days, plan.late_penalty_fee);
-        setCurrentPlan(plan);
-        setSchedules(updatedSchedules);
-      }
+      const res = await window.api.dbQuery<ScheduleRow>(
+        `SELECT * FROM installment_schedules WHERE plan_id = ? ORDER BY installment_number ASC`,
+        [plan.id]
+      );
+      setDetailSchedules(res.success ? (res.data || []) : []);
+      setDetailPlan(plan);
+      setShowDetailModal(true);
     } catch (err) {
       console.error('Failed to load schedules:', err);
     }
   };
 
-  const handleCreatePlan = async (values: InstallmentPlanFormValues) => {
-    try {
-      const monthlyAmount = Math.round((values.total_sale_price - values.down_payment) / values.plan_duration_months);
-      const planId = await createInstallmentPlan('', values.buyer_name, {
-        plot_id: values.plot_id,
-        buyer_name: values.buyer_name,
-        buyer_phone: values.buyer_phone,
-        buyer_cnic: values.buyer_cnic,
-        total_sale_price: values.total_sale_price,
-        down_payment: values.down_payment,
-        plan_duration_months: values.plan_duration_months,
-        monthly_installment_amount: monthlyAmount,
-        start_date: values.start_date,
-        due_day_of_month: values.due_day_of_month,
-        grace_period_days: values.grace_period_days,
-        late_penalty_fee: values.late_penalty_fee,
-      });
-      await loadPlans();
-      setShowCreateModal(false);
-      onPlanSelect(planId);
-    } catch (err) {
-      console.error('Failed to create plan:', err);
-    }
+  const openWhatsApp = (plan: PlanRow) => {
+    const msg =
+      `*Dripp Real Estate — Payment Reminder*\n\n` +
+      `Dear ${plan.buyer_name},\n\n` +
+      `This is a friendly reminder regarding your installment plan for Plot ${plan.plot_number || plan.plot_id} in ${plan.society_name || 'N/A'}.\n\n` +
+      `Plan ID: ${plan.id}\n` +
+      `Monthly Installment: ${fmt(plan.monthly_installment_amount)}\n` +
+      `Total Sale Price: ${fmt(plan.total_sale_price)}\n` +
+      `Down Payment Paid: ${fmt(plan.down_payment)}\n\n` +
+      `Please ensure timely payments to avoid late penalties.\n\n` +
+      `Contact us for any queries.\n` +
+      `_Pay via Dripp ERP — Secure & Verified_`;
+    setWhatsAppPlan(plan);
+    setWhatsAppMessage(msg);
+    setShowWhatsAppModal(true);
   };
 
-  const openPaymentModal = (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    if (schedule) {
-      const totalDue = schedule.amount_due + schedule.late_fine_charged - schedule.amount_paid;
-      setPaymentForm({
-        schedule_id: scheduleId,
-        amount_paid: totalDue,
-        payment_date: new Date().toISOString().split('T')[0],
-        payment_method: 'CASH',
-        discount_applied: 0,
-        late_fine_charged: schedule.late_fine_charged,
-      });
-      setSelectedScheduleId(scheduleId);
-      setShowPaymentModal(true);
-    }
+  const sendWhatsApp = () => {
+    if (!whatsAppPlan) return;
+    const phone = whatsAppPlan.buyer_phone.replace(/[^0-9]/g, '');
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(whatsAppMessage)}`;
+    window.open(url, '_blank');
+    setShowWhatsAppModal(false);
+    setWhatsAppPlan(null);
   };
 
-  const handlePayment = async (values: PaymentFormValues) => {
+  const openAddInstallment = (plan: PlanRow) => {
+    setPaymentPlan(plan);
+    setPaymentAmount(String(plan.monthly_installment_amount));
+    setPaymentMode('CASH');
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentReceiptNo('');
+    setShowPaymentModal(true);
+  };
+
+  const recordInstallment = async () => {
+    if (!paymentPlan || !paymentAmount || Number(paymentAmount) <= 0) return;
+    setSubmitting(true);
     try {
-      await recordSchedulePayment(
-        {
-          schedule_id: values.schedule_id,
-          amount_paid: values.amount_paid,
-          payment_date: values.payment_date,
-          payment_method: values.payment_method,
-          discount_applied: values.discount_applied,
-          late_fine_charged: values.late_fine_charged,
-        },
-        '',
-        ''
+      const amount = Number(paymentAmount);
+
+      const schedRes = await window.api.dbQuery<ScheduleRow>(
+        `SELECT * FROM installment_schedules WHERE plan_id = ? AND status != 'PAID' ORDER BY installment_number ASC LIMIT 1`,
+        [paymentPlan.id]
       );
-      setShowPaymentModal(false);
-      setSelectedScheduleId('');
-      if (currentPlan) {
-        await onPlanSelect(currentPlan.id);
+      if (!schedRes.success || !schedRes.data || schedRes.data.length === 0) {
+        alert('No pending installments found for this plan.');
+        setSubmitting(false);
+        return;
       }
+      const sched = schedRes.data[0];
+      const totalDue = sched.amount_due + sched.late_fine_charged;
+      const newPaid = sched.amount_paid + amount;
+      const isFullyPaid = newPaid >= totalDue;
+      const newStatus: string = isFullyPaid ? 'PAID' : 'PENDING';
+
+      const receiptId = paymentReceiptNo || `RCP_${Date.now()}`;
+
+      await window.api.dbExecute(
+        `INSERT INTO installment_payments (
+          id, schedule_id, plan_id, amount, payment_mode, payment_date, receipt_no, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [
+          `IPAY_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          sched.id,
+          paymentPlan.id,
+          amount,
+          paymentMode,
+          paymentDate,
+          receiptId,
+        ]
+      );
+
+      await window.api.dbExecute(
+        `UPDATE installment_schedules
+         SET amount_paid = ?, payment_date = ?, payment_method = ?, status = ?
+         WHERE id = ?`,
+        [newPaid, paymentDate, paymentMode, newStatus, sched.id]
+      );
+
+      if (isFullyPaid) {
+        const allSchedRes = await window.api.dbQuery<ScheduleRow>(
+          `SELECT status FROM installment_schedules WHERE plan_id = ?`,
+          [paymentPlan.id]
+        );
+        const allPaid = (allSchedRes.data || []).every(s => s.status === 'PAID');
+        if (allPaid) {
+          await window.api.dbExecute(
+            `UPDATE installment_plans SET status = 'COMPLETED' WHERE id = ?`,
+            [paymentPlan.id]
+          );
+        }
+      }
+
+      setShowPaymentModal(false);
+      setPaymentPlan(null);
+      await loadPlans();
     } catch (err) {
-      console.error('Failed to record payment:', err);
+      console.error('Failed to record installment:', err);
+      alert('Failed to record installment. Please try again.');
     }
-  };
-
-  const handlePrintReceipt = (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    if (!schedule || !currentPlan) return;
-
-    const totalDue = schedule.amount_due + (schedule.late_fine_charged || 0);
-    const remaining = totalDue - schedule.amount_paid;
-    const receiptItems: ReceiptItem[] = [
-      { name: `Installment #${schedule.installment_number}`, price: schedule.amount_due },
-    ];
-    if (schedule.late_fine_charged > 0) {
-      receiptItems.push({ name: 'Late Fine', price: schedule.late_fine_charged });
-    }
-    if (schedule.discount_applied > 0) {
-      receiptItems.push({ name: 'Discount', price: -schedule.discount_applied });
-    }
-    const receiptOptions: ReceiptOptions = {
-      currency: 'Rs.',
-      title: 'INSTALLMENT RECEIPT',
-      receiptNumber: `RCP_${schedule.id}`,
-      date: schedule.payment_date || new Date().toISOString().split('T')[0],
-      buyer: currentPlan.buyer_name,
-      reference: `Plan: ${currentPlan.id} | Inst #${schedule.installment_number}`,
-    };
-    const receiptText = generateReceipt(receiptItems, receiptOptions);
-    const fullReceipt = `${receiptText}\n\nTotal Due: ${fmt(totalDue)}\nPaid: ${fmt(schedule.amount_paid)}\nRemaining: ${fmt(remaining)}\nStatus: ${schedule.status}\n\nPrinted: ${new Date().toLocaleString()}`;
-    printInstallmentReceipt(fullReceipt);
-  };
-
-  const handlePrintWhatsAppReceipt = (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    if (!schedule || !currentPlan) return;
-
-    const totalDue = schedule.amount_due + schedule.late_fine_charged - schedule.amount_paid;
-    const message = `*Dripp Real Estate - Installment Receipt*\n\n` +
-      `Plan ID: ${currentPlan.id}\n` +
-      `Buyer: ${currentPlan.buyer_name}\n` +
-      `Phone: ${currentPlan.buyer_phone}\n` +
-      `Installment #${schedule.installment_number} of ${currentPlan.plan_duration_months}\n` +
-      `Due Date: ${schedule.due_date}\n` +
-      `Amount Due: ${fmt(schedule.amount_due)}\n` +
-      (schedule.late_fine_charged > 0 ? `Late Fine: ${fmt(schedule.late_fine_charged)}\n` : '') +
-      (schedule.discount_applied > 0 ? `Discount: ${fmt(schedule.discount_applied)}\n` : '') +
-      `Total Paid: ${fmt(schedule.amount_paid)}\n` +
-      `Remaining: ${fmt(totalDue)}\n` +
-      `Status: ${schedule.status}\n` +
-      `\n_Pay via Dripp ERP — Secure & Verified_`;
-    const whatsappLink = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappLink, '_blank');
-  };
-
-  const handleWhatsAppReminder = (scheduleId: string) => {
-    const schedule = schedules.find(s => s.id === scheduleId);
-    if (!schedule || !currentPlan) return;
-
-    const balance = schedule.amount_due - schedule.amount_paid + schedule.late_fine_charged;
-    const message = `*Dripp Real Estate — Payment Reminder*\n\n` +
-      `Dear ${currentPlan.buyer_name},\n\n` +
-      `Your installment #${schedule.installment_number} of ${currentPlan.plan_duration_months} is due on ${schedule.due_date}.\n` +
-      `Outstanding Amount: ${fmt(balance)}\n` +
-      (schedule.status === 'OVERDUE' ? `⚠️ This payment is OVERDUE. Please pay immediately to avoid further penalties.\n` : '') +
-      `\nPay via: Dripp ERP\n` +
-      `Contact: ${currentPlan.buyer_phone}`;
-    const whatsappLink = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappLink, '_blank');
+    setSubmitting(false);
   };
 
   const filteredPlans = plans.filter(plan => {
-    const matchesSearch = plan.buyer_name.toLowerCase().includes(search.toLowerCase()) ||
-      plan.plot_id.toLowerCase().includes(search.toLowerCase()) ||
-      plan.buyer_phone.includes(search) ||
-      plan.buyer_cnic.includes(search);
-    const matchesFilter = filterStatus === 'ALL' || plan.status === filterStatus;
-    return matchesSearch && matchesFilter;
+    const q = search.toLowerCase();
+    return (
+      plan.buyer_name.toLowerCase().includes(q) ||
+      plan.buyer_phone.includes(q) ||
+      plan.buyer_cnic.includes(q) ||
+      (plan.plot_number || '').toLowerCase().includes(q) ||
+      (plan.society_name || '').toLowerCase().includes(q) ||
+      plan.id.toLowerCase().includes(q)
+    );
   });
 
-  const overdueSchedules = schedules.filter(s => s.status === 'OVERDUE');
-  const pendingSchedules = schedules.filter(s => s.status === 'PENDING');
-  const paidSchedules = schedules.filter(s => s.status === 'PAID');
-
-  const displaySchedules = overdueFilterActive
-    ? overdueSchedules
-    : schedules;
-
-  const summary = currentPlan ? calculatePlanSummary(currentPlan, schedules) : null;
-
-  const handleCreateFormChange = (field: keyof InstallmentPlanFormValues, value: string | number) => {
-    setCreateForm(prev => {
-      const next = { ...prev, [field]: value };
-      if (field === 'total_sale_price' || field === 'down_payment' || field === 'plan_duration_months') {
-        const financed = (next.total_sale_price - next.down_payment);
-        next.monthly_installment_amount = next.plan_duration_months > 0 ? Math.round(financed / next.plan_duration_months) : 0;
-      }
-      return next;
-    });
-  };
-
-  const surchargeAmount = createForm.surcharge_rate > 0 && createForm.total_sale_price > 0
-    ? calculateSurcharge(createForm.total_sale_price - createForm.down_payment, createForm.surcharge_rate)
-    : 0;
-  const surchargeValid = createForm.surcharge_rate === 0 || validateSurcharge(
-    createForm.total_sale_price - createForm.down_payment,
-    surchargeAmount,
-    createForm.surcharge_rate
-  );
-
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold mb-4">Installment Engine</h2>
+    <div className="min-h-screen bg-slate-950 text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+          <CreditCard className="w-6 h-6 text-emerald-400" />
+          Installment Engine
+        </h1>
 
-      {/* Search & Filter Bar */}
-      <div className="mb-4 flex gap-2 flex-wrap items-center">
-        <div className="flex items-center border p-2 rounded flex-1 min-w-[200px]">
-          <Search className="w-4 h-4 mr-2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search buyer, plot, phone, or CNIC..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 outline-none"
-          />
-        </div>
-        <div className="flex items-center border p-2 rounded">
-          <Filter className="w-4 h-4 mr-2 text-gray-400" />
-          <select
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value as 'ALL' | 'ACTIVE' | 'COMPLETED' | 'DEFAULTED')}
-            className="outline-none"
-          >
-            <option value="ALL">All Plans</option>
-            <option value="ACTIVE">Active</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="DEFAULTED">Defaulted</option>
-          </select>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-1"
-        >
-          <Plus className="w-4 h-4" /> New Plan
-        </button>
-      </div>
-
-      {/* Plans List Table */}
-      <div className="mb-4 overflow-x-auto">
-        <table className="w-full border-collapse border">
-          <thead>
-            <tr className="border-b bg-gray-100">
-              <th className="p-2 text-left">Plot ID</th>
-              <th className="p-2 text-left">Buyer</th>
-              <th className="p-2 text-left">Phone</th>
-              <th className="p-2 text-left">CNIC</th>
-              <th className="p-2 text-right">Total Price</th>
-              <th className="p-2 text-right">Down Payment</th>
-              <th className="p-2 text-center">Duration</th>
-              <th className="p-2 text-center">Monthly</th>
-              <th className="p-2 text-center">Status</th>
-              <th className="p-2 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredPlans.map(plan => (
-              <tr key={plan.id} className="hover:bg-gray-50 border-b">
-                <td className="p-2">{plan.plot_id}</td>
-                <td className="p-2 font-medium">{plan.buyer_name}</td>
-                <td className="p-2">{plan.buyer_phone}</td>
-                <td className="p-2">{plan.buyer_cnic}</td>
-                <td className="p-2 text-right">{fmt(plan.total_sale_price)}</td>
-                <td className="p-2 text-right">{fmt(plan.down_payment)}</td>
-                <td className="p-2 text-center">{plan.plan_duration_months} mo</td>
-                <td className="p-2 text-right">{fmt(plan.monthly_installment_amount)}</td>
-                <td className="p-2 text-center">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    plan.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                    plan.status === 'COMPLETED' ? 'bg-blue-100 text-blue-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {plan.status}
-                  </span>
-                </td>
-                <td className="p-2 text-center">
-                  <button
-                    onClick={() => onPlanSelect(plan.id)}
-                    className="text-blue-600 underline flex items-center gap-1 mx-auto"
-                  >
-                    <Eye className="w-3 h-3" /> View
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {filteredPlans.length === 0 && (
-              <tr>
-                <td colSpan={10} className="p-4 text-center text-gray-500">
-                  No installment plans found.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Schedule Detail Section */}
-      {currentPlan && (
-        <div className="mt-6 overflow-x-auto border rounded">
-          <div className="flex items-center justify-between p-4 bg-gray-50 border-b">
-            <div>
-              <h3 className="font-bold text-lg">Installment Schedule — {currentPlan.buyer_name}</h3>
-              <p className="text-sm text-gray-600">
-                Plan ID: {currentPlan.id} | Plot: {currentPlan.plot_id} | Duration: {currentPlan.plan_duration_months} months
-              </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          {[
+            { label: 'Total Plans', value: stats.totalPlans, icon: Hash, color: 'text-white' },
+            { label: 'Active', value: stats.active, icon: Clock, color: 'text-emerald-400' },
+            { label: 'Completed', value: stats.completed, icon: CheckCircle, color: 'text-sky-400' },
+            { label: 'Overdue', value: stats.overdue, icon: AlertCircle, color: 'text-red-400' },
+            { label: 'Total Revenue', value: fmt(stats.totalRevenue), icon: CreditCard, color: 'text-amber-400' },
+            { label: 'Collected', value: fmt(stats.collected), icon: Check, color: 'text-emerald-400' },
+          ].map((item) => (
+            <div key={item.label} className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <item.icon className="w-4 h-4 text-slate-400" />
+                <span className="text-xs text-slate-400">{item.label}</span>
+              </div>
+              <p className={`text-xl font-bold ${item.color}`}>{item.value}</p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setOverdueFilterActive(!overdueFilterActive)}
-                className={`px-3 py-1 rounded text-sm flex items-center gap-1 ${
-                  overdueFilterActive ? 'bg-red-600 text-white' : 'bg-red-100 text-red-800'
-                }`}
-              >
-                <AlertCircle className="w-3 h-3" />
-                Overdue ({overdueSchedules.length})
-              </button>
-              <button
-                onClick={() => { setCurrentPlan(null); setSchedules([]); setOverdueFilterActive(false); }}
-                className="px-3 py-1 rounded text-sm bg-gray-200 flex items-center gap-1"
-              >
-                <X className="w-3 h-3" /> Close
-              </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg px-4 py-2 flex-1">
+            <Search className="w-4 h-4 text-slate-400 mr-2" />
+            <input
+              type="text"
+              placeholder="Search buyer, phone, CNIC, plot, society, plan ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="bg-transparent outline-none text-white w-full placeholder-slate-500"
+            />
+          </div>
+          <div className="text-sm text-slate-400">
+            {filteredPlans.length} plan{filteredPlans.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-16 text-slate-400">
+            <Clock className="w-8 h-8 animate-spin mx-auto mb-3" />
+            Loading installment plans...
+          </div>
+        ) : filteredPlans.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <CreditCard className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p className="text-lg">No active installment plans found.</p>
+            <p className="text-sm mt-1">Plans with status ACTIVE will appear here.</p>
+          </div>
+        ) : (
+          <div className="bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-900/50">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Plot</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Buyer</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Phone</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Sale Price</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Monthly</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider">Duration</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {filteredPlans.map((plan) => (
+                    <tr key={plan.id} className="hover:bg-slate-800/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="font-medium text-white">{plan.plot_number || plan.plot_id}</p>
+                          <p className="text-xs text-slate-400">{plan.society_name || ''} {plan.block_phase ? `— ${plan.block_phase}` : ''}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-white">{plan.buyer_name}</p>
+                        <p className="text-xs text-slate-400">{plan.buyer_cnic}</p>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-300">{plan.buyer_phone}</td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-sm font-medium text-white">{fmt(plan.total_sale_price)}</span>
+                        <p className="text-xs text-slate-400">Down: {fmt(plan.down_payment)}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-sm font-medium text-emerald-400">{fmt(plan.monthly_installment_amount)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm text-slate-300">{plan.plan_duration_months} mo</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => openWhatsApp(plan)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
+                            title="Send WhatsApp Reminder"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            WhatsApp
+                          </button>
+                          <button
+                            onClick={() => openDetails(plan)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium rounded-lg transition-colors"
+                            title="View Payment Schedule"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Details
+                          </button>
+                          <button
+                            onClick={() => openAddInstallment(plan)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium rounded-lg transition-colors"
+                            title="Record Installment Payment"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
+        )}
+      </div>
 
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b bg-gray-100">
-                <th className="p-2 text-center">#</th>
-                <th className="p-2 text-left">Due Date</th>
-                <th className="p-2 text-right">Amount Due</th>
-                <th className="p-2 text-right">Paid</th>
-                <th className="p-2 text-right">Late Fine</th>
-                <th className="p-2 text-right">Discount</th>
-                <th className="p-2 text-right">Balance</th>
-                <th className="p-2 text-center">Status</th>
-                <th className="p-2 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displaySchedules.map(schedule => {
-                const balance = schedule.amount_due + schedule.late_fine_charged - schedule.amount_paid;
-                return (
-                  <tr key={schedule.id} className="border-b hover:bg-gray-50">
-                    <td className="p-2 text-center font-medium">{schedule.installment_number}</td>
-                    <td className="p-2">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-gray-400" />
-                        {schedule.due_date}
-                      </div>
-                    </td>
-                    <td className="p-2 text-right">{fmt(schedule.amount_due)}</td>
-                    <td className="p-2 text-right">
-                      <span className={schedule.amount_paid > 0 ? 'text-green-700 font-medium' : ''}>
-                        {fmt(schedule.amount_paid)}
-                      </span>
-                    </td>
-                    <td className="p-2 text-right">
-                      {schedule.late_fine_charged > 0 ? (
-                        <span className="text-red-600 font-medium">{fmt(schedule.late_fine_charged)}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-2 text-right">
-                      {schedule.discount_applied > 0 ? (
-                        <span className="text-green-600 font-medium">-{fmt(schedule.discount_applied)}</span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-2 text-right font-medium">
-                      <span className={balance <= 0 ? 'text-green-700' : balance > 0 && schedule.status === 'OVERDUE' ? 'text-red-600' : ''}>
-                        {fmt(Math.max(0, balance))}
-                      </span>
-                    </td>
-                    <td className="p-2 text-center">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        schedule.status === 'PAID' ? 'bg-green-100 text-green-800' :
-                        schedule.status === 'OVERDUE' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {schedule.status}
-                      </span>
-                    </td>
-                    <td className="p-2 text-center">
-                      <div className="flex items-center gap-1 justify-center flex-wrap">
-                        {schedule.status !== 'PAID' && (
-                          <button
-                            onClick={() => openPaymentModal(schedule.id)}
-                            className="text-xs bg-green-600 text-white px-2 py-1 rounded flex items-center gap-1"
-                          >
-                            <DollarSign className="w-3 h-3" /> Pay
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handlePrintReceipt(schedule.id)}
-                          className="text-xs text-purple-600 underline flex items-center gap-1"
-                          title="Print 80mm thermal receipt"
-                        >
-                          <Printer className="w-3 h-3" /> Print
-                        </button>
-                        <button
-                          onClick={() => handlePrintWhatsAppReceipt(schedule.id)}
-                          className="text-xs text-blue-600 underline flex items-center gap-1"
-                          title="Send receipt via WhatsApp"
-                        >
-                          <Mail className="w-3 h-3" /> WA Receipt
-                        </button>
-                        <button
-                          onClick={() => handleWhatsAppReminder(schedule.id)}
-                          className="text-xs text-green-700 underline flex items-center gap-1"
-                          title="Send payment reminder via WhatsApp"
-                        >
-                          <FileText className="w-3 h-3" /> WA Reminder
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {displaySchedules.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="p-4 text-center text-gray-500">
-                    {overdueFilterActive ? 'No overdue installments.' : 'No schedules found.'}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {showDetailModal && detailPlan && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-sky-400" />
+                  Payment Schedule
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  {detailPlan.buyer_name} — Plot {detailPlan.plot_number || detailPlan.plot_id} ({detailPlan.society_name || 'N/A'})
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowDetailModal(false); setDetailPlan(null); }}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
 
-          {/* Summary Panel */}
-          {summary && (
-            <div className="p-4 bg-gray-50 border-t grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="px-6 py-3 border-b border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-gray-500 flex items-center gap-1"><Clock className="w-3 h-3" /> Total Due</p>
-                <p className="font-bold text-lg">{fmt(summary.totalDue)}</p>
+                <p className="text-xs text-slate-400">Total Price</p>
+                <p className="font-bold text-white">{fmt(detailPlan.total_sale_price)}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Total Paid</p>
-                <p className="font-bold text-lg text-green-700">{fmt(summary.totalPaid)}</p>
+                <p className="text-xs text-slate-400">Down Payment</p>
+                <p className="font-bold text-emerald-400">{fmt(detailPlan.down_payment)}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Total Penalties</p>
-                <p className="font-bold text-lg text-red-600">{fmt(summary.totalPenalties)}</p>
+                <p className="text-xs text-slate-400">Monthly</p>
+                <p className="font-bold text-sky-400">{fmt(detailPlan.monthly_installment_amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 flex items-center gap-1"><DollarSign className="w-3 h-3" /> Remaining</p>
-                <p className="font-bold text-lg">{fmt(summary.remaining)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Progress</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-full bg-gray-200 rounded-full h-2.5">
-                    <div
-                      className="bg-green-600 h-2.5 rounded-full"
-                      style={{ width: `${Math.min(100, summary.progress)}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium">{Math.round(summary.progress)}%</span>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">{summary.paidCount} of {currentPlan.plan_duration_months} paid</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Schedule Status Breakdown</p>
-                <div className="flex gap-3 mt-1">
-                  <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">Paid: {paidSchedules.length}</span>
-                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">Pending: {pendingSchedules.length}</span>
-                  <span className="text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded">Overdue: {overdueSchedules.length}</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Surcharge Info</p>
-                <p className="text-sm">Grace Period: {currentPlan.grace_period_days} days</p>
-                <p className="text-sm">Penalty/Day: {fmt(currentPlan.late_penalty_fee)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Plan Details</p>
-                <p className="text-sm">Down Payment: {fmt(currentPlan.down_payment)}</p>
-                <p className="text-sm">Monthly: {fmt(currentPlan.monthly_installment_amount)}</p>
-                <p className="text-sm">Due Day: {currentPlan.due_day_of_month}</p>
+                <p className="text-xs text-slate-400">Duration</p>
+                <p className="font-bold text-white">{detailPlan.plan_duration_months} months</p>
               </div>
             </div>
-          )}
+
+            <div className="flex-1 overflow-y-auto">
+              {detailSchedules.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  No schedule records found.
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-slate-900">
+                    <tr className="border-b border-slate-800">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">#</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Due Date</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Due</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Paid</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Penalty</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Balance</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {detailSchedules.map((sched) => {
+                      const balance = sched.amount_due + sched.late_fine_charged - sched.amount_paid;
+                      return (
+                        <tr
+                          key={sched.id}
+                          className={`${
+                            sched.status === 'PAID'
+                              ? 'bg-emerald-950/20'
+                              : sched.status === 'OVERDUE'
+                              ? 'bg-red-950/20'
+                              : ''
+                          }`}
+                        >
+                          <td className="px-4 py-3 text-sm font-medium text-white">
+                            {sched.installment_number}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-300">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                              {sched.due_date}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right text-white">
+                            {fmt(sched.amount_due)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right">
+                            <span className={sched.amount_paid > 0 ? 'text-emerald-400 font-medium' : 'text-slate-500'}>
+                              {fmt(sched.amount_paid)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right">
+                            {sched.late_fine_charged > 0 ? (
+                              <span className="text-red-400 font-medium">{fmt(sched.late_fine_charged)}</span>
+                            ) : (
+                              <span className="text-slate-600">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-medium">
+                            <span className={balance <= 0 ? 'text-emerald-400' : sched.status === 'OVERDUE' ? 'text-red-400' : 'text-white'}>
+                              {fmt(Math.max(0, balance))}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                                sched.status === 'PAID'
+                                  ? 'bg-emerald-900/50 text-emerald-300'
+                                  : sched.status === 'OVERDUE'
+                                  ? 'bg-red-900/50 text-red-300'
+                                  : 'bg-sky-900/50 text-sky-300'
+                              }`}
+                            >
+                              {sched.status === 'PAID' && <Check className="w-3 h-3" />}
+                              {sched.status === 'OVERDUE' && <AlertCircle className="w-3 h-3" />}
+                              {sched.status === 'PENDING' && <Clock className="w-3 h-3" />}
+                              {sched.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {detailSchedules.length > 0 && (
+              <div className="px-6 py-4 border-t border-slate-800 grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-xs text-slate-400">Total Paid</p>
+                  <p className="font-bold text-emerald-400">
+                    {fmt(detailSchedules.reduce((s, sc) => s + sc.amount_paid, 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Total Penalty</p>
+                  <p className="font-bold text-red-400">
+                    {fmt(detailSchedules.reduce((s, sc) => s + sc.late_fine_charged, 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Remaining</p>
+                  <p className="font-bold text-white">
+                    {fmt(detailSchedules.reduce((s, sc) => s + sc.amount_due + sc.late_fine_charged - sc.amount_paid, 0))}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Create Plan Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg">Create New Installment Plan</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-5 h-5" />
+      {showWhatsAppModal && whatsAppPlan && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-emerald-400" />
+                WhatsApp Reminder
+              </h2>
+              <button
+                onClick={() => { setShowWhatsAppModal(false); setWhatsAppPlan(null); }}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleCreatePlan(createForm);
-              }}
-              className="space-y-4"
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Plot ID *</label>
-                  <input
-                    type="text"
-                    value={createForm.plot_id}
-                    onChange={e => handleCreateFormChange('plot_id', e.target.value)}
-                    className="border p-2 rounded w-full"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Buyer Name *</label>
-                  <input
-                    type="text"
-                    value={createForm.buyer_name}
-                    onChange={e => handleCreateFormChange('buyer_name', e.target.value)}
-                    className="border p-2 rounded w-full"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Buyer Phone *</label>
-                  <input
-                    type="tel"
-                    value={createForm.buyer_phone}
-                    onChange={e => handleCreateFormChange('buyer_phone', e.target.value)}
-                    className="border p-2 rounded w-full"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Buyer CNIC *</label>
-                  <input
-                    type="text"
-                    value={createForm.buyer_cnic}
-                    onChange={e => handleCreateFormChange('buyer_cnic', e.target.value)}
-                    className="border p-2 rounded w-full"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Total Sale Price *</label>
-                  <input
-                    type="number"
-                    value={createForm.total_sale_price || ''}
-                    onChange={e => handleCreateFormChange('total_sale_price', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={0}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Down Payment *</label>
-                  <input
-                    type="number"
-                    value={createForm.down_payment || ''}
-                    onChange={e => handleCreateFormChange('down_payment', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={0}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Plan Duration (months) *</label>
-                  <input
-                    type="number"
-                    value={createForm.plan_duration_months}
-                    onChange={e => handleCreateFormChange('plan_duration_months', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={1}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Start Date *</label>
-                  <input
-                    type="date"
-                    value={createForm.start_date}
-                    onChange={e => handleCreateFormChange('start_date', e.target.value)}
-                    className="border p-2 rounded w-full"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Due Day of Month *</label>
-                  <input
-                    type="number"
-                    value={createForm.due_day_of_month}
-                    onChange={e => handleCreateFormChange('due_day_of_month', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={1}
-                    max={31}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Grace Period (days)</label>
-                  <input
-                    type="number"
-                    value={createForm.grace_period_days}
-                    onChange={e => handleCreateFormChange('grace_period_days', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={0}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Late Penalty Fee (per day)</label>
-                  <input
-                    type="number"
-                    value={createForm.late_penalty_fee}
-                    onChange={e => handleCreateFormChange('late_penalty_fee', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={0}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Surcharge Rate (%)</label>
-                  <input
-                    type="number"
-                    value={createForm.surcharge_rate}
-                    onChange={e => handleCreateFormChange('surcharge_rate', Number(e.target.value))}
-                    className="border p-2 rounded w-full"
-                    min={0}
-                    max={100}
-                  />
+
+            <div className="p-6">
+              <div className="mb-4">
+                <label className="block text-xs text-slate-400 mb-1">To</label>
+                <div className="flex items-center gap-2 bg-slate-800 px-3 py-2 rounded-lg">
+                  <Phone className="w-4 h-4 text-slate-400" />
+                  <span className="text-white font-medium">{whatsAppPlan.buyer_name}</span>
+                  <span className="text-slate-400 text-sm">({whatsAppPlan.buyer_phone})</span>
                 </div>
               </div>
 
-              {/* Plan Preview */}
-              <div className="bg-gray-50 p-4 rounded border">
-                <h4 className="font-semibold mb-2">Plan Preview</h4>
-                <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Financed Amount:</span>
-                    <p className="font-medium">{fmt(createForm.total_sale_price - createForm.down_payment)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Monthly Installment:</span>
-                    <p className="font-medium">{fmt(createForm.monthly_installment_amount)}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Total Payments:</span>
-                    <p className="font-medium">{createForm.plan_duration_months} installments</p>
-                  </div>
-                  {surchargeAmount > 0 && (
-                    <div>
-                      <span className="text-gray-500">Surcharge Amount:</span>
-                      <p className={`font-medium ${surchargeValid ? 'text-green-600' : 'text-red-600'}`}>
-                        {fmt(surchargeAmount)} {surchargeValid ? '✓' : '✗'}
-                      </p>
-                    </div>
-                  )}
-                  <div>
-                    <span className="text-gray-500">Total Cost:</span>
-                    <p className="font-medium">
-                      {fmt(createForm.total_sale_price - createForm.down_payment + surchargeAmount)}
-                    </p>
-                  </div>
-                </div>
+              <div className="mb-6">
+                <label className="block text-xs text-slate-400 mb-1">Message</label>
+                <textarea
+                  value={whatsAppMessage}
+                  onChange={(e) => setWhatsAppMessage(e.target.value)}
+                  rows={12}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-emerald-500 resize-none"
+                />
               </div>
 
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-3">
                 <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 border rounded text-gray-600"
+                  onClick={() => { setShowWhatsAppModal(false); setWhatsAppPlan(null); }}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 bg-green-600 text-white rounded"
+                  onClick={sendWhatsApp}
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
-                  Create Plan
+                  <Send className="w-4 h-4" />
+                  Send via WhatsApp
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Payment Recording Modal */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-lg">Record Payment</h3>
-              <button onClick={() => setShowPaymentModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-5 h-5" />
+      {showPaymentModal && paymentPlan && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-amber-400" />
+                Record Installment
+              </h2>
+              <button
+                onClick={() => { setShowPaymentModal(false); setPaymentPlan(null); }}
+                className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
-            {(() => {
-              const schedule = schedules.find(s => s.id === selectedScheduleId);
-              if (!schedule) return null;
-              const totalDue = schedule.amount_due + schedule.late_fine_charged - schedule.amount_paid;
-              return (
+
+            <div className="p-6">
+              <div className="bg-slate-800 rounded-lg p-3 mb-5">
+                <p className="text-sm text-slate-300">
+                  <span className="text-slate-400">Buyer:</span> {paymentPlan.buyer_name}
+                </p>
+                <p className="text-sm text-slate-300">
+                  <span className="text-slate-400">Plot:</span> {paymentPlan.plot_number || paymentPlan.plot_id}
+                </p>
+                <p className="text-sm text-slate-300">
+                  <span className="text-slate-400">Monthly:</span>{' '}
+                  <span className="text-emerald-400 font-medium">{fmt(paymentPlan.monthly_installment_amount)}</span>
+                </p>
+              </div>
+
+              <div className="space-y-4">
                 <div>
-                  <div className="bg-gray-50 p-3 rounded mb-4 text-sm">
-                    <p>Installment #{schedule.installment_number} of {currentPlan?.plan_duration_months}</p>
-                    <p>Due Date: {schedule.due_date}</p>
-                    <p>Amount Due: {fmt(schedule.amount_due)}</p>
-                    {schedule.late_fine_charged > 0 && (
-                      <p className="text-red-600">Late Fine: {fmt(schedule.late_fine_charged)}</p>
-                    )}
-                    <p className="font-medium">Total Payable: {fmt(totalDue)}</p>
-                  </div>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handlePayment(paymentForm);
-                    }}
-                    className="space-y-3"
-                  >
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Payment Amount *</label>
-                      <input
-                        type="number"
-                        value={paymentForm.amount_paid}
-                        onChange={e => setPaymentForm(prev => ({ ...prev, amount_paid: Number(e.target.value) }))}
-                        className="border p-2 rounded w-full"
-                        min={0}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Payment Date *</label>
-                      <input
-                        type="date"
-                        value={paymentForm.payment_date}
-                        onChange={e => setPaymentForm(prev => ({ ...prev, payment_date: e.target.value }))}
-                        className="border p-2 rounded w-full"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Payment Method *</label>
-                      <select
-                        value={paymentForm.payment_method}
-                        onChange={e => setPaymentForm(prev => ({ ...prev, payment_method: e.target.value }))}
-                        className="border p-2 rounded w-full"
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="BANK_TRANSFER">Bank Transfer</option>
-                        <option value="PAY_ORDER">Pay Order</option>
-                        <option value="CHEQUE">Cheque</option>
-                        <option value="ONLINE">Online</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">Discount Applied</label>
-                      <input
-                        type="number"
-                        value={paymentForm.discount_applied}
-                        onChange={e => setPaymentForm(prev => ({ ...prev, discount_applied: Number(e.target.value) }))}
-                        className="border p-2 rounded w-full"
-                        min={0}
-                      />
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded text-sm">
-                      <div className="flex justify-between">
-                        <span>Amount Due:</span>
-                        <span>{fmt(totalDue)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Payment:</span>
-                        <span>{fmt(paymentForm.amount_paid)}</span>
-                      </div>
-                      {paymentForm.discount_applied > 0 && (
-                        <div className="flex justify-between text-green-600">
-                          <span>Discount:</span>
-                          <span>-{fmt(paymentForm.discount_applied)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between font-medium border-t pt-1 mt-1">
-                        <span>Remaining:</span>
-                        <span>{fmt(Math.max(0, totalDue - paymentForm.amount_paid - paymentForm.discount_applied))}</span>
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowPaymentModal(false)}
-                        className="px-4 py-2 border rounded text-gray-600"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-green-600 text-white rounded"
-                      >
-                        Record Payment
-                      </button>
-                    </div>
-                  </form>
+                  <label className="block text-xs text-slate-400 mb-1">Amount (Rs.) *</label>
+                  <input
+                    type="number"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    min={1}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-amber-500"
+                  />
                 </div>
-              );
-            })()}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Payment Mode *</label>
+                    <select
+                      value={paymentMode}
+                      onChange={(e) => setPaymentMode(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-amber-500"
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="PAY_ORDER">Pay Order</option>
+                      <option value="CHEQUE">Cheque</option>
+                      <option value="ONLINE">Online</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Date *</label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Receipt No</label>
+                  <input
+                    type="text"
+                    value={paymentReceiptNo}
+                    onChange={(e) => setPaymentReceiptNo(e.target.value)}
+                    placeholder="Optional — auto-generated if empty"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-500 outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => { setShowPaymentModal(false); setPaymentPlan(null); }}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={recordInstallment}
+                  disabled={submitting || !paymentAmount || Number(paymentAmount) <= 0}
+                  className="flex items-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {submitting ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CreditCard className="w-4 h-4" />
+                  )}
+                  Record Payment
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
