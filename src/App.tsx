@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { CashCounter } from './components/dashboard/CashCounter';
 import { PlotInventory } from './components/inventory/PlotInventory';
@@ -219,47 +220,48 @@ const App: React.FC = () => {
   );
 
   function renderModuleContent(module: string) {
+    const wrap = (el: React.ReactNode) => <ErrorBoundary module={module}>{el}</ErrorBoundary>;
     switch (module) {
       case 'dashboard':
-        return <Dashboard branchId={branchId} onNavigate={setActiveModule} />;
+        return wrap(<Dashboard branchId={branchId} onNavigate={setActiveModule} />);
       case 'inventory':
-        return <PlotInventory branchId={branchId} currentUser={user!} />;
+        return wrap(<PlotInventory branchId={branchId} currentUser={user!} />);
       case 'plazas':
-        return <PlazaManagement branchId={branchId} currentUser={user!} />;
+        return wrap(<PlazaManagement branchId={branchId} currentUser={user!} />);
       case 'cash-counter':
-        return <CashCounter branchId={branchId} currentUser={user!} />;
+        return wrap(<CashCounter branchId={branchId} currentUser={user!} />);
       case 'crm':
-        return <CRMKanban />;
+        return wrap(<CRMKanban />);
       case 'acquisition':
-        return <LandAcquisitions currentUser={user!} />;
+        return wrap(<LandAcquisitions currentUser={user!} />);
       case 'sales':
-        return <SalesEngine branchId={branchId} currentUser={user!} />;
+        return wrap(<SalesEngine branchId={branchId} currentUser={user!} />);
       case 'installments':
-        return <InstallmentEngine />;
+        return wrap(<InstallmentEngine />);
       case 'digikhata':
-        return <DigiKhata currentUser={user!} />;
+        return wrap(<DigiKhata currentUser={user!} />);
       case 'agents':
-        return <AgentNetwork />;
+        return wrap(<AgentNetwork />);
       case 'investors':
-        return <InvestorPools currentUser={user!} />;
+        return wrap(<InvestorPools currentUser={user!} />);
       case 'construction':
-        return <ConstructionTracker currentUser={user!} />;
+        return wrap(<ConstructionTracker currentUser={user!} />);
       case 'expenses':
-        return <OfficeOverheads currentUser={user!} />;
+        return wrap(<OfficeOverheads currentUser={user!} />);
       case 'documents':
-        return <LegalVault currentUser={user!} />;
+        return wrap(<LegalVault currentUser={user!} />);
       case 'audit':
-        return <AccessControl currentUser={user!} />;
+        return wrap(<AccessControl currentUser={user!} />);
       case 'branches':
-        return <BranchManager currentUser={user!} />;
+        return wrap(<BranchManager currentUser={user!} />);
       case 'whatsapp':
-        return <WhatsAppGateway />;
+        return wrap(<WhatsAppGateway />);
       case 'tax':
-        return <TaxCalculator currentUser={user!} />;
+        return wrap(<TaxCalculator currentUser={user!} />);
       case 'settings':
-        return <Settings branchId={branchId} onBranchChange={setBranchId} />;
+        return wrap(<Settings branchId={branchId} onBranchChange={setBranchId} />);
       default:
-        return <Dashboard branchId={branchId} />;
+        return wrap(<Dashboard branchId={branchId} />);
     }
   }
 };

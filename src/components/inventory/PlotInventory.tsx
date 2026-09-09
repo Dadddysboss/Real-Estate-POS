@@ -208,7 +208,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         notes: plot.notes || '',
       };
       await updatePlot(plot.id, branchId, currentUser.id, currentUser.fullName, payload, plot);
-      setMessage({ type: 'success', text: `Status set to ${status.replaceAll('_', ' ')}.` });
+      setMessage({ type: 'success', text: `Status set to ${status.replace(/_/g, ' ')}.` });
       await loadData();
       setSelected(null);
     } catch (err) {
@@ -244,7 +244,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
       <div className="flex items-center gap-2 flex-wrap">
         {PLOT_STATUSES.map((s) => (
           <span key={s} className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_STYLE[s]}`}>
-            {s.replaceAll('_', ' ')}: {countByStatusMap[s] || 0}
+            {s.replace(/_/g, ' ')}: {countByStatusMap[s] || 0}
           </span>
         ))}
       </div>
@@ -276,7 +276,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | PlotRecord['status'])}
           className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none">
           <option value="ALL">All Statuses</option>
-          {PLOT_STATUSES.map((s) => <option key={s} value={s}>{s.replaceAll('_', ' ')}</option>)}
+          {PLOT_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
         <div className="flex items-center gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl">
           {([
@@ -311,7 +311,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   <p className="text-xs text-slate-400">Block/Phase {plot.block_phase} • Plot #{plot.plot_number}</p>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${STATUS_STYLE[plot.status]}`}>
-                  {plot.status.replaceAll('_', ' ')}
+                  {plot.status.replace(/_/g, ' ')}
                 </span>
               </div>
               {parseFeatureTags(plot.feature_tags).length > 0 && (
@@ -379,7 +379,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   <td className="py-2.5 pr-4 text-right font-mono text-emerald-400">{fmt(plot.target_asking_price)}</td>
                   <td className="py-2.5 pr-4 text-right font-mono text-sky-400">{fmt(plot.floor_price)}</td>
                   <td className="py-2.5 pr-4">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLE[plot.status]}`}>{plot.status.replaceAll('_', ' ')}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLE[plot.status]}`}>{plot.status.replace(/_/g, ' ')}</span>
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -425,7 +425,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
             <span>Legend:</span>
             {PLOT_STATUSES.map((s) => (
               <span key={s} className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_DOT[s] }} /> {s.replaceAll('_', ' ')}
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_DOT[s] }} /> {s.replace(/_/g, ' ')}
               </span>
             ))}
           </p>
@@ -476,7 +476,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Status</label>
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as PlotRecord['status'] })} className="input-base">
-                  {PLOT_STATUSES.map((s) => <option key={s} value={s}>{s.replaceAll('_', ' ')}</option>)}
+                  {PLOT_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
                 </select>
               </div>
               <div>
@@ -559,7 +559,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   {PLOT_STATUSES.filter(s => s !== selected.status).map((s) => (
                     <button key={s} onClick={() => quickStatusChange(selected, s)}
                       className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold ${STATUS_STYLE[s]}`}>
-                      {s.replaceAll('_', ' ')}
+                      {s.replace(/_/g, ' ')}
                     </button>
                   ))}
                 </div>

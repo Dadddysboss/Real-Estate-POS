@@ -9,17 +9,28 @@ interface TaxCalculatorProps {
 }
 
 const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
+const SIZE_UNITS = ['Marla', 'Kanal', 'Murabba', 'Acre'] as const;
+
+const MARLA_TO_SQFT: Record<string, number> = {
+  Marla: 272.25,
+  Kanal: 5445,
+  Murabba: 27225,
+  Acre: 43560,
+};
 
 export const TaxCalculator: React.FC<TaxCalculatorProps> = ({ currentUser }) => {
   const [buyerType, setBuyerType] = useState<'FILIER' | 'NON_FILER'>('FILIER');
   const [city, setCity] = useState('LAHORE');
   const [plotPrice, setPlotPrice] = useState(0);
-  const [areaSqft, setAreaSqft] = useState(0);
+  const [sizeValue, setSizeValue] = useState(5);
+  const [sizeUnit, setSizeUnit] = useState<string>('Marla');
   const [result, setResult] = useState<any>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const areaSqft = (sizeValue || 0) * (MARLA_TO_SQFT[sizeUnit] || 272.25);
+
   const handleCalculate = async () => {
-    if (!plotPrice || !areaSqft || areaSqft <= 0) {
+    if (!plotPrice || areaSqft <= 0) {
       setMessage({ type: 'error', text: 'Enter valid plot price and area' });
       return;
     }
@@ -34,7 +45,7 @@ export const TaxCalculator: React.FC<TaxCalculatorProps> = ({ currentUser }) => 
   };
 
   const clearForm = () => {
-    setPlotPrice(0); setAreaSqft(0); setResult(null); setMessage(null);
+    setPlotPrice(0); setSizeValue(5); setSizeUnit('Marla'); setResult(null); setMessage(null);
   };
 
   return (
@@ -54,7 +65,7 @@ export const TaxCalculator: React.FC<TaxCalculatorProps> = ({ currentUser }) => 
 
       {/* Input Form */}
       <div className="glass-card p-5">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="text-xs text-slate-400 block mb-1">Buyer Type</label>
             <select value={buyerType} onChange={(e) => setBuyerType(e.target.value as typeof buyerType)} className="input-base">
@@ -77,8 +88,14 @@ export const TaxCalculator: React.FC<TaxCalculatorProps> = ({ currentUser }) => 
             <input type="number" min={0} value={plotPrice || ''} onChange={(e) => setPlotPrice(Number(e.target.value) || 0)} className="input-base font-mono" placeholder="1000000" />
           </div>
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Area (sq ft) *</label>
-            <input type="number" min={0} value={areaSqft || ''} onChange={(e) => setAreaSqft(Number(e.target.value) || 0)} className="input-base font-mono" placeholder="2500" />
+            <label className="text-xs text-slate-400 block mb-1">Size Value</label>
+            <input type="number" min={0} step={0.25} value={sizeValue || ''} onChange={(e) => setSizeValue(Number(e.target.value) || 0)} className="input-base" placeholder="e.g. 5" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Unit</label>
+            <select value={sizeUnit} onChange={(e) => setSizeUnit(e.target.value)} className="input-base">
+              {SIZE_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
           </div>
         </div>
         <div className="flex gap-3 mt-4">

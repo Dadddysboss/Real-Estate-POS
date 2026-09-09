@@ -318,7 +318,7 @@ export const PlazaManagement: React.FC<PlazaManagementProps> = ({ branchId, curr
                         onClick={() => document.getElementById(`floor-${f.floor}`)?.scrollIntoView({ behavior: 'smooth' })}
                         className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold whitespace-nowrap"
                       >
-                        {f.floor.replaceAll('_', ' ')} ({f.units.length})
+                        {f.floor.replace(/_/g, ' ')} ({f.units.length})
                       </button>
                     ))}
                   </div>
@@ -329,7 +329,7 @@ export const PlazaManagement: React.FC<PlazaManagementProps> = ({ branchId, curr
                       <div key={f.floor} id={`floor-${f.floor}`}>
                         <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                           <span className="w-2 h-2 bg-emerald-400 rounded-full"></span>
-                          {f.floor.replaceAll('_', ' ')}
+                          {f.floor.replace(/_/g, ' ')}
                         </h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                           {f.units.map((unit) => (
@@ -444,7 +444,7 @@ export const PlazaManagement: React.FC<PlazaManagementProps> = ({ branchId, curr
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Floor Level</label>
                 <select value={unitFloor} onChange={(e) => setUnitFloor(e.target.value as FloorLevel)} className="input-base">
-                  {FLOOR_LEVELS.map((f) => <option key={f} value={f}>{f.replaceAll('_', ' ')}</option>)}
+                  {FLOOR_LEVELS.map((f) => <option key={f} value={f}>{f.replace(/_/g, ' ')}</option>)}
                 </select>
               </div>
               <div>
