@@ -37,3 +37,5 @@ coverage/
 # Misc
 *.tgz
 *.tar.gz
+
+.vercel
