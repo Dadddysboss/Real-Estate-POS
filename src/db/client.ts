@@ -7,7 +7,7 @@ let dbClient: Client | null = null;
 export function getDbClient(): Client {
   if (!dbClient) {
     dbClient = createClient({
-      url: process.env.TURSO_DATABASE_URL || 'file:dripp_erp_local.db',
+      url: process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io',
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
   }

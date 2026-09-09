@@ -7,8 +7,8 @@ interface AuthGateProps {
 }
 
 export const AuthGate: React.FC<AuthGateProps> = ({ onSuccess }) => {
-  const [username, setUsername] = useState('dripp');
-  const [password, setPassword] = useState('5821');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -119,11 +119,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onSuccess }) => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-800/60 text-center">
-            <p className="text-xs text-slate-500">
-              Initial credentials: <span className="font-mono">dripp</span> / <span className="font-mono">5821</span>
-            </p>
-          </div>
+
         </div>
       </div>
     </div>
