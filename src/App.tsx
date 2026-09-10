@@ -83,9 +83,9 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 z-40 h-screen bg-slate-900/80 backdrop-blur-2xl border-r border-slate-800 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
+      <aside className={`flex-shrink-0 h-full bg-slate-900/80 backdrop-blur-2xl border-r border-slate-800 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="flex flex-col h-full">
           {/* Logo / Brand */}
           <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800">
@@ -174,7 +174,7 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
+      <main className="flex-1 min-w-0 h-full overflow-y-auto">
         {/* Top Header */}
         <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-2xl border-b border-slate-800">
           <div className="flex items-center justify-between h-16 px-6">

@@ -98,7 +98,7 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
   const data = await response.json();
   const result = data.results?.[0];
   if (!result || !result.response) {
-    throw new Error('Empty response from Turso');
+    return { rows: [] };
   }
   if (result.response.type === 'error') {
     throw new Error(result.response.message || 'Turso execution error');

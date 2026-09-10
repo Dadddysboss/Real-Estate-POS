@@ -101,15 +101,22 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
         }
       }
       // Load system settings
-      await window.api.dbExecute(
-        `INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES
-          ('session_timeout', '30'),
-          ('require_pin_on_wake', '1'),
-          ('audit_log_retention', '365'),
-          ('theme', 'dark'),
-          ('compact_mode', '0'),
-          ('animations_enabled', '1')`, []
-      );
+      const sysDefaults = [
+        ['session_timeout', '30'],
+        ['require_pin_on_wake', '1'],
+        ['audit_log_retention', '365'],
+        ['theme', 'dark'],
+        ['compact_mode', '0'],
+        ['animations_enabled', '1'],
+      ];
+      for (const [key, val] of sysDefaults) {
+        try {
+          await window.api.dbExecute(
+            `INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO NOTHING`,
+            [key, val]
+          );
+        } catch { /* ignore */ }
+      }
       const sysRes = await window.api.dbQuery<{ setting_key: string; setting_value: string }>('SELECT * FROM system_settings', []);
       if (sysRes.success && sysRes.data) {
         const sysMap = Object.fromEntries(sysRes.data.map((r) => [r.setting_key, r.setting_value]));
