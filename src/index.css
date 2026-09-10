@@ -3,13 +3,29 @@
 @tailwind utilities;
 
 @layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background-color: #020617;
+    color: #f8fafc;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  span, label, p, h1, h2, h3, h4, h5, h6 {
+    display: inline-block;
+    line-height: 1.4;
+  }
+
   :root {
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
-  }
-
-  * {
-    @apply border-slate-800;
   }
 
   body {
@@ -23,6 +39,26 @@
 }
 
 @layer components {
+  .page-container {
+    @apply space-y-6 max-w-[1600px] mx-auto min-w-0;
+  }
+
+  .stat-card {
+    @apply bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between gap-3 shadow-sm;
+  }
+
+  .stat-card-label {
+    @apply text-xs font-semibold text-slate-400 uppercase tracking-wider block;
+  }
+
+  .stat-card-value {
+    @apply text-2xl font-bold text-slate-100 tracking-tight font-mono;
+  }
+
+  .stat-card-sub {
+    @apply text-xs text-slate-500;
+  }
+
   .glass-card {
     @apply bg-white/10 dark:bg-slate-900/40 backdrop-blur-2xl border border-white/20 dark:border-slate-800/60 shadow-[0_8px_32px_0_rgba(0,0,0,0.12)] rounded-2xl transition-all duration-300;
   }

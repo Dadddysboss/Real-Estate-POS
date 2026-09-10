@@ -5,6 +5,32 @@
   "main": "dist-electron/main.js",
   "author": "System Administrator",
   "license": "PROPRIETARY",
+  "build": {
+    "appId": "com.dripperp.realestate",
+    "productName": "Dripp Real Estate ERP",
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/@libsql/**"
+    ],
+    "files": [
+      "dist-electron/**/*",
+      "dist/index.html",
+      "dist/assets/**/*",
+      "!dist/win-unpacked/**",
+      "!dist-installer/**",
+      "!dist/*.exe",
+      "!dist/*.blockmap",
+      "!dist/*.yml"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
   "scripts": {
     "dev": "vite",
     "electron:dev": "vite",

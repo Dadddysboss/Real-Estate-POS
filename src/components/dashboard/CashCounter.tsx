@@ -300,6 +300,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
     try {
       const saleId = `SALE_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const plot = plots.find((p) => p.id === plotId)!;
+      const cashCounterId = `CC_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
       const insertSale = await window.api.dbExecute(
         `INSERT INTO sales_transactions (
@@ -334,6 +335,33 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
         if (!insertBreakdown.success) throw new Error(safeStr(insertBreakdown.error) || 'Failed to record payment breakdown');
       }
 
+      const insertCashCounter = await window.api.dbExecute(
+        `INSERT INTO cash_counter (id, branch_id, user_id, transaction_type, category, amount, notes, received_by, created_at)
+         VALUES (?, ?, ?, 'INFLOW', 'PLOT_SALE', ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [cashCounterId, branchId, currentUser.id, totalDue, receiptNotes.trim() || `Instant plot sale: ${plot.plot_number}`, currentUser.fullName]
+      );
+      if (!insertCashCounter.success) throw new Error(safeStr(insertCashCounter.error) || 'Failed to record cash counter');
+
+      const insertDeal = await window.api.dbExecute(
+        `INSERT INTO sales_deals (id, plot_id, cash_counter_id, buyer_name, buyer_phone, buyer_cnic, total_deal_price, down_payment, balance_amount, sales_agent, payment_mode, sale_date, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)`,
+        [
+          saleId,
+          plotId,
+          cashCounterId,
+          buyerName.trim(),
+          buyerPhone.trim(),
+          buyerCnic.trim(),
+          totalDue,
+          downPayment,
+          totalDue - downPayment,
+          currentUser.fullName,
+          paymentRows[0]?.method ?? 'CASH',
+          receiptNotes.trim() || '',
+        ]
+      );
+      if (!insertDeal.success) throw new Error(safeStr(insertDeal.error) || 'Failed to record sales deal');
+
       const updatePlot = await window.api.dbExecute(
         `UPDATE inventory_plots SET status = 'SOLD', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [plotId]
@@ -348,6 +376,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       resetAll();
       fetchAvailablePlots();
     } catch (err) {
+      console.error('[CashCounter] Instant sale failed:', err);
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record sale' });
     }
     setSubmitting(false);
@@ -558,7 +587,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
         </div>
       ))}
 
-      <div className={`flex items-center justify-between p-3 rounded-xl border text-sm font-semibold ${
+      <div className={`flex flex-col gap-1 p-3 rounded-xl border text-sm font-semibold ${
         isOver
           ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
           : isValid
@@ -566,7 +595,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
             : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
       }`}>
         <span>Total Collected: {fmt(splitSum)}</span>
-        <span>/ {fmt(requiredAmount)} Required</span>
+        <span>{fmt(requiredAmount)} Required</span>
       </div>
       {isOver && (
         <p className="text-xs text-rose-400 font-medium">
@@ -577,7 +606,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
   );
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>

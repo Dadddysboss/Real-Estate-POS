@@ -4,6 +4,7 @@ import {
   fetchPools, createPool,
   fetchInvestors, addInvestor, removeInvestor,
   distributeDividend, fetchDividendHistory, calculatePoolStats,
+  recordPayout, fetchPayouts,
 } from '../../services/investor.service';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
@@ -19,10 +20,13 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
   const [selectedPool, setSelectedPool] = useState<any | null>(null);
   const [investors, setInvestors] = useState<any[]>([]);
   const [dividends, setDividends] = useState<any[]>([]);
+  const [payouts, setPayouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPoolForm, setShowPoolForm] = useState(false);
   const [showInvestorForm, setShowInvestorForm] = useState(false);
   const [showDividendForm, setShowDividendForm] = useState(false);
+  const [showPayoutForm, setShowPayoutForm] = useState(false);
+  const [payoutInvestor, setPayoutInvestor] = useState<any>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Pool form
@@ -43,10 +47,16 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
   const [distDate, setDistDate] = useState(new Date().toISOString().split('T')[0]);
   const [distDesc, setDistDesc] = useState('');
 
+  // Payout form
+  const [payoutAmount, setPayoutAmount] = useState(0);
+  const [payoutMode, setPayoutMode] = useState('CASH');
+  const [payoutNotes, setPayoutNotes] = useState('');
+
   const loadData = async () => {
     setLoading(true);
     try {
       const poolsData = await fetchPools();
+      console.log('[InvestorPools] Loaded pools from DB:', poolsData.length, poolsData);
       setPools(poolsData);
       if (poolsData.length > 0 && !selectedPool) setSelectedPool(poolsData[0]);
     } catch (err) {
@@ -57,12 +67,14 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
 
   const loadPoolData = async (poolId: string) => {
     try {
-      const [invData, divData] = await Promise.all([
+      const [invData, divData, payoutData] = await Promise.all([
         fetchInvestors(poolId),
         fetchDividendHistory(poolId),
+        fetchPayouts(poolId),
       ]);
       setInvestors(invData);
       setDividends(divData);
+      setPayouts(payoutData);
     } catch (err) { console.error(err); }
   };
 
@@ -79,18 +91,25 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       return;
     }
     try {
-      await createPool(currentUser.id, currentUser.fullName, {
+      const poolId = await createPool(currentUser.id, currentUser.fullName, {
         pool_name: poolName.trim(),
         total_target_capital: targetCapital,
         description: description.trim(),
         status: poolStatus,
       });
-      setMessage({ type: 'success', text: 'Pool created' });
+      // Re-fetch to confirm pool actually exists in DB
+      await loadData();
+      const confirmed = pools.some(p => p.id === poolId) || (await (async () => { const d = await fetchPools(); return d.some(p => p.id === poolId); })());
+      if (!confirmed) {
+        setMessage({ type: 'error', text: 'Pool was created but could not be found in database. Please refresh.' });
+        return;
+      }
+      setMessage({ type: 'success', text: 'Pool created successfully' });
       setShowPoolForm(false);
       resetPoolForm();
-      await loadData();
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to create pool' });
+      console.error('[InvestorPools] Creation Error:', err);
+      setMessage({ type: 'error', text: `Failed to create pool: ${err instanceof Error ? err.message : 'Database error'}` });
     }
   };
 
@@ -150,10 +169,33 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
     }
   };
 
+  const handleRecordPayout = async () => {
+    if (!selectedPool || !payoutInvestor || payoutAmount <= 0) {
+      setMessage({ type: 'error', text: 'Enter a valid payout amount' });
+      return;
+    }
+    try {
+      await recordPayout(currentUser.id, currentUser.fullName, {
+        pool_id: selectedPool.id,
+        investor_id: payoutInvestor.id,
+        amount: payoutAmount,
+        payment_mode: payoutMode,
+        notes: payoutNotes.trim(),
+      });
+      setMessage({ type: 'success', text: `Payout of ${fmt(payoutAmount)} recorded for ${payoutInvestor.investor_name}` });
+      setShowPayoutForm(false);
+      setPayoutAmount(0); setPayoutNotes('');
+      setPayoutInvestor(null);
+      await loadPoolData(selectedPool.id);
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record payout' });
+    }
+  };
+
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading pools...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -202,6 +244,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
         <div className="lg:col-span-3">
           {selectedPool ? (() => {
             const stats = calculatePoolStats(selectedPool, investors);
+            const totalEquity = investors.reduce((s, inv) => s + (inv.equity_percentage || 0), 0);
             return (
               <div className="space-y-6">
                 {/* Summary Cards */}
@@ -230,9 +273,43 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                   </button>
                   <button onClick={() => { setShowDividendForm(true); }}
                     className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-semibold transition">
-                    💰 Distribute Profit
+                    Distribute Profit
                   </button>
                 </div>
+
+                {/* Equity % Breakdown */}
+                {investors.length > 0 && (
+                  <div className="glass-card p-4">
+                    <h3 className="text-sm font-bold text-white mb-3">Equity % Breakdown</h3>
+                    <div className="space-y-3">
+                      {investors.map((inv) => {
+                        const equityPct = totalEquity > 0 ? ((inv.equity_percentage || 0) / totalEquity * 100) : 0;
+                        const dividendShare = stats.totalRaised > 0 ? (inv.contributed_amount / stats.totalRaised) : 0;
+                        return (
+                          <div key={inv.id} className="bg-slate-950/60 rounded-xl p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="font-medium text-white text-sm">{inv.investor_name}</p>
+                                <p className="text-[10px] text-slate-500">Invested: {fmt(inv.contributed_amount)} | Equity: {inv.equity_percentage}%</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] text-slate-500">Share of Pool</p>
+                                <p className="text-xs font-bold text-purple-300">{equityPct.toFixed(1)}%</p>
+                              </div>
+                            </div>
+                            <div className="w-full bg-slate-800 rounded-full h-1.5">
+                              <div className="bg-gradient-to-r from-purple-500 to-pink-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, equityPct)}%` }} />
+                            </div>
+                            <div className="flex items-center justify-between mt-2 text-[10px]">
+                              <span className="text-slate-500">Total Payouts: {fmt(inv.total_payout_received || 0)}</span>
+                              <span className="text-slate-500">Dividend Ratio: {(dividendShare * 100).toFixed(1)}%</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Investors Table */}
                 <div className="glass-card overflow-hidden">
@@ -243,6 +320,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                           <th className="py-3 px-4">Investor</th>
                           <th className="py-3 px-4 text-right">Contribution</th>
                           <th className="py-3 px-4 text-right">Equity %</th>
+                          <th className="py-3 px-4 text-right">Payouts</th>
                           <th className="py-3 px-4 text-center">Action</th>
                         </tr>
                       </thead>
@@ -259,21 +337,53 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                                 {inv.equity_percentage}%
                               </span>
                             </td>
+                            <td className="py-2.5 px-4 text-right font-mono text-emerald-400 text-[10px]">
+                              {fmt(inv.total_payout_received || 0)}
+                            </td>
                             <td className="py-2.5 px-4 text-center">
-                              <button onClick={() => handleRemoveInvestor(inv.id)}
-                                className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded" title="Remove">
-                                <Trash2 size={12} />
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={() => { setPayoutInvestor(inv); setPayoutAmount(0); setPayoutNotes(''); setShowPayoutForm(true); }}
+                                  className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded" title="Record Payout">
+                                  <DollarSign size={12} />
+                                </button>
+                                <button onClick={() => handleRemoveInvestor(inv.id)}
+                                  className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded" title="Remove">
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
                         {investors.length === 0 && (
-                          <tr><td colSpan={4} className="py-6 text-center text-slate-500">No investors in this pool</td></tr>
+                          <tr><td colSpan={5} className="py-6 text-center text-slate-500">No investors in this pool</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                 </div>
+
+                {/* Payout Ledger */}
+                {payouts.length > 0 && (
+                  <div className="glass-card p-4">
+                    <h3 className="text-sm font-bold text-white mb-3">Payout Ledger</h3>
+                    <div className="space-y-2">
+                      {payouts.map((pay) => (
+                        <div key={pay.id} className="flex items-center justify-between bg-slate-950/60 rounded-lg p-3 text-xs">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center">
+                              <DollarSign size={12} className="text-emerald-400" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-white">{pay.investor_name || 'Investor'}</p>
+                              <p className="text-[10px] text-slate-500">{pay.payout_date} | {pay.payment_mode} {pay.notes ? `| ${pay.notes}` : ''}</p>
+                            </div>
+                          </div>
+                          <p className="font-mono font-bold text-emerald-400">{fmt(pay.amount_paid)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Dividend History */}
                 {dividends.length > 0 && (
@@ -287,8 +397,8 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                               <DollarSign size={12} className="text-emerald-400" />
                             </div>
                             <div>
-                              <p className="font-medium text-white">{div.description || 'Dividend Distribution'}</p>
-                              <p className="text-[10px] text-slate-500">{div.distribution_date}</p>
+                              <p className="font-medium text-white">{div.investor_name} — {div.distribution_date}</p>
+                              <p className="text-[10px] text-slate-500">Pool dividend distribution</p>
                             </div>
                           </div>
                           <p className="font-mono font-bold text-emerald-400">{fmt(div.profit_amount)}</p>
@@ -399,7 +509,6 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
             <div className="p-5 space-y-4">
               <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-300">
                 Will distribute proportionally based on each investor's equity %.
-                Creates DigiKhata entries for notification.
               </div>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Total Profit Amount *</label>
@@ -417,6 +526,45 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
             <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-800">
               <button onClick={() => setShowDividendForm(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Cancel</button>
               <button onClick={handleDistributeDividend} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold">Distribute</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Payout Modal */}
+      {showPayoutForm && payoutInvestor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={() => setShowPayoutForm(false)}>
+          <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <h3 className="text-base font-bold text-emerald-400">Record Payout</h3>
+              <button onClick={() => setShowPayoutForm(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-950/60 rounded-xl p-3">
+                <p className="text-xs text-slate-500">Investor</p>
+                <p className="text-sm font-bold text-white">{payoutInvestor.investor_name}</p>
+                <p className="text-[10px] text-slate-500">Equity: {payoutInvestor.equity_percentage}% | Total Payouts: {fmt(payoutInvestor.total_payout_received || 0)}</p>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Payout Amount *</label>
+                <input type="number" min={0} value={payoutAmount || ''} onChange={(e) => setPayoutAmount(Number(e.target.value) || 0)} className="input-base font-mono" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Payment Mode</label>
+                <select value={payoutMode} onChange={(e) => setPayoutMode(e.target.value)} className="input-base">
+                  <option value="CASH">Cash</option>
+                  <option value="BANK_TRANSFER">Bank Transfer</option>
+                  <option value="CHEQUE">Cheque</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Notes</label>
+                <input type="text" value={payoutNotes} onChange={(e) => setPayoutNotes(e.target.value)} className="input-base" placeholder="Optional notes" />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-800">
+              <button onClick={() => setShowPayoutForm(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Cancel</button>
+              <button onClick={handleRecordPayout} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold">Record Payout</button>
             </div>
           </div>
         </div>

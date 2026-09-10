@@ -218,7 +218,7 @@ export const PlazaManagement: React.FC<PlazaManagementProps> = ({ branchId, curr
   const floors = unitsByFloor(units);
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

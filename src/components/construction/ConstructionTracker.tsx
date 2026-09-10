@@ -340,7 +340,7 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
   }
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -571,7 +571,7 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
                   <div className="p-4 border-t border-slate-800 bg-slate-950/40">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-400">Total Expenses</span>
-                      <span className="text-sm font-bold text-amber-400 font-mono">
+                      <span className="text-sm font-bold text-amber-400 font-mono tabular-nums">
                         {fmt(getPlotTotalSpent(selectedPlot.id))}
                       </span>
                     </div>
@@ -639,7 +639,7 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
                 </div>
                 <div className="mt-3 flex items-center justify-between p-3 bg-slate-950/60 rounded-lg border border-slate-800">
                   <span className="text-xs font-semibold text-slate-400">Material Subtotal</span>
-                  <span className="text-sm font-bold text-sky-400 font-mono">{fmt(getMaterialTotal())}</span>
+                  <span className="text-sm font-bold text-sky-400 font-mono tabular-nums">{fmt(getMaterialTotal())}</span>
                 </div>
               </div>
 
@@ -769,8 +769,8 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
               </div>
 
               {/* ─── Form Total ─── */}
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between">
-                <span className="text-sm font-semibold text-emerald-300">Form Total</span>
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex flex-col gap-1">
+                <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wider">Form Total</span>
                 <span className="text-xl font-bold text-emerald-400 font-mono">
                   {fmt(calculateFormTotal())}
                 </span>

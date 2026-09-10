@@ -126,8 +126,10 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS cash_counter (id TEXT PRIMARY KEY, branch_id TEXT, user_id TEXT, transaction_type TEXT, category TEXT, amount REAL, notes TEXT, handed_over_by TEXT, received_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS inventory_plots (id TEXT PRIMARY KEY, branch_id TEXT, plot_number TEXT, society_name TEXT, block_phase TEXT, size_dimension TEXT, size_value REAL DEFAULT 0, size_unit TEXT DEFAULT 'Marla', category TEXT, feature_tags TEXT, purchase_date TEXT, purchase_price REAL, target_asking_price REAL, floor_price REAL, gps_coordinates TEXT, status TEXT DEFAULT 'AVAILABLE', construction_status TEXT DEFAULT 'NONE', notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, branch_id TEXT, prospect_name TEXT, phone_number TEXT, interested_category TEXT, budget_range REAL, lead_source TEXT, assigned_agent_id TEXT, pipeline_stage TEXT DEFAULT 'NEW_LEAD', priority TEXT DEFAULT 'WARM', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS sales_transactions (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, final_sale_price REAL, cost_basis REAL, development_costs REAL DEFAULT 0, agent_commission REAL DEFAULT 0, government_taxes REAL DEFAULT 0, net_profit_calculated REAL, payment_method TEXT, agent_id TEXT, sale_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS sale_payment_breakdowns (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, payment_method TEXT NOT NULL, transaction_ref TEXT, amount REAL NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+"CREATE TABLE IF NOT EXISTS sales_transactions (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, final_sale_price REAL, cost_basis REAL, development_costs REAL DEFAULT 0, agent_commission REAL DEFAULT 0, government_taxes REAL DEFAULT 0, net_profit_calculated REAL, payment_method TEXT, agent_id TEXT, sale_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+       "CREATE TABLE IF NOT EXISTS sale_payment_breakdowns (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, payment_method TEXT NOT NULL, transaction_ref TEXT, amount REAL NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+       "CREATE TABLE IF NOT EXISTS sales_deals (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, cash_counter_id TEXT, buyer_name TEXT NOT NULL, buyer_phone TEXT NOT NULL, buyer_cnic TEXT, total_deal_price REAL NOT NULL, down_payment REAL DEFAULT 0, balance_amount REAL DEFAULT 0, sales_agent TEXT, payment_mode TEXT DEFAULT 'CASH', sale_date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
+       "CREATE TABLE IF NOT EXISTS cash_counter (id TEXT PRIMARY KEY, branch_id TEXT, user_id TEXT, transaction_type TEXT, category TEXT, amount REAL, notes TEXT, handed_over_by TEXT, received_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS installment_plans (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, total_sale_price REAL, down_payment REAL, plan_duration_months INTEGER, monthly_installment_amount REAL, start_date TEXT, due_day_of_month INTEGER, grace_period_days INTEGER DEFAULT 5, late_penalty_fee REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS installment_schedules (id TEXT PRIMARY KEY, plan_id TEXT, installment_number INTEGER, due_date TEXT, amount_due REAL, amount_paid REAL DEFAULT 0, late_fine_charged REAL DEFAULT 0, discount_applied REAL DEFAULT 0, payment_date TEXT, payment_method TEXT, status TEXT DEFAULT 'PENDING', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS installment_payments (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, plot_id TEXT, amount_paid REAL NOT NULL, payment_date TEXT DEFAULT (datetime('now')), payment_mode TEXT DEFAULT 'CASH', receipt_no TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -136,8 +138,10 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, agency_name TEXT, agent_name TEXT, phone_number TEXT, cnic TEXT, commission_type TEXT, commission_rate REAL, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS agent_commissions (id TEXT PRIMARY KEY, agent_id TEXT, transaction_id TEXT, commission_earned REAL, commission_paid REAL DEFAULT 0, balance_due REAL, status TEXT DEFAULT 'UNPAID', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS land_acquisitions (id TEXT PRIMARY KEY, seller_name TEXT, seller_phone TEXT, seller_cnic TEXT, land_title_khata TEXT, total_agreed_price REAL, advance_paid REAL, debt_remaining REAL, acquisition_date TEXT, registry_doc_url TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT, target_capital REAL, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS investor_members (id TEXT PRIMARY KEY, pool_id TEXT, investor_name TEXT, phone TEXT, invested_amount REAL, equity_percentage REAL, total_payout_received REAL DEFAULT 0)",
+      "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS construction_projects (id TEXT PRIMARY KEY, branch_id TEXT, project_name TEXT, site_location TEXT, budget_allocated REAL, total_spent REAL DEFAULT 0, status TEXT DEFAULT 'PLANNING', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, sand_price REAL DEFAULT 0, bajri_price REAL DEFAULT 0, srya_price REAL DEFAULT 0, truck_price REAL DEFAULT 0, cement_price REAL DEFAULT 0, bricks_price REAL DEFAULT 0, labor_details TEXT, total_amount REAL NOT NULL, expense_date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS daily_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category_name TEXT, amount REAL, payment_source TEXT, approved_by TEXT, description TEXT, voucher_number TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -151,19 +155,16 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS plaza_units (id TEXT PRIMARY KEY, plaza_id TEXT, floor_level TEXT, unit_number TEXT, covered_area_sqft REAL, rate_per_sqft REAL, target_price REAL, status TEXT DEFAULT 'AVAILABLE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS site_visits (id TEXT PRIMARY KEY, lead_id TEXT, plot_id TEXT, visit_date TEXT, status TEXT DEFAULT 'SCHEDULED', feedback_notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS staff_users (id TEXT PRIMARY KEY, username TEXT UNIQUE, full_name TEXT, role TEXT DEFAULT 'STAFF', branch_id TEXT, pin_code TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, investor_name TEXT, phone TEXT, cnic TEXT, invested_amount REAL DEFAULT 0, equity_share REAL DEFAULT 0, pool_id TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS materials (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL DEFAULT 0, min_stock_alert REAL DEFAULT 0, unit_cost REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS material_usages (id TEXT PRIMARY KEY, material_id TEXT, project_id TEXT, quantity_used REAL, used_by TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT, description TEXT, amount REAL, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS fixed_assets (id TEXT PRIMARY KEY, branch_id TEXT, asset_name TEXT, asset_type TEXT, purchase_date TEXT, purchase_value REAL DEFAULT 0, current_value REAL DEFAULT 0, depreciation_rate REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS kyc_registry (id TEXT PRIMARY KEY, party_type TEXT, party_id TEXT, cnic_number TEXT, cnic_expiry TEXT, address_proof TEXT, photo_url TEXT, status TEXT DEFAULT 'PENDING', verified_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, title TEXT, doc_type TEXT, reference_type TEXT, reference_id TEXT, file_path TEXT, file_base64 TEXT, uploaded_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT, member_id TEXT, amount REAL, distribution_date TEXT DEFAULT (datetime('now')), notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS branch_sync_queue (id TEXT PRIMARY KEY, branch_id TEXT, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS cash_denominations (id TEXT PRIMARY KEY, cash_counter_id TEXT, notes_5000 INTEGER DEFAULT 0, notes_1000 INTEGER DEFAULT 0, notes_500 INTEGER DEFAULT 0, notes_100 INTEGER DEFAULT 0, notes_50 INTEGER DEFAULT 0, notes_20 INTEGER DEFAULT 0, notes_10 INTEGER DEFAULT 0, total_calculated REAL, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS construction_material_stock (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL, min_stock_alert REAL, unit_cost REAL)",
       "CREATE TABLE IF NOT EXISTS construction_material_logs (id TEXT PRIMARY KEY, project_id TEXT, material_id TEXT, quantity_used REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, batch_id TEXT, pool_id TEXT, member_id TEXT, amount_paid REAL, equity_percentage REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS digikhata_transactions (id TEXT PRIMARY KEY, party_id TEXT NOT NULL, amount REAL NOT NULL, transaction_type TEXT NOT NULL, payment_mode TEXT NOT NULL, note TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS system_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'INFO', is_read INTEGER DEFAULT 0, module TEXT, link TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -198,9 +199,37 @@ async function autoSeedDatabase(): Promise<void> {
       "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
       "ALTER TABLE construction_expenses ADD COLUMN supplier_name TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
+      // Investor pools — align old DBs with new schema
+      "ALTER TABLE investor_pools ADD COLUMN total_target_capital REAL DEFAULT 0",
+      "ALTER TABLE investor_pools ADD COLUMN description TEXT DEFAULT ''",
+      "ALTER TABLE investor_pools ADD COLUMN branch_id TEXT",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }
+    }
+
+    // Drop and recreate investor tables if schema is outdated
+    // This handles the case where old tables had incompatible columns
+    try {
+      // Check if investor_pools has the old 'target_capital' column (not 'total_target_capital')
+      const checkRes = await tursoExecute("PRAGMA table_info(investor_pools)");
+      const poolCols = (checkRes.rows || []).map((r: Record<string, unknown>) => String(r.name || ''));
+      if (poolCols.includes('target_capital') && !poolCols.includes('total_target_capital')) {
+        console.log('[Web] Detected outdated investor_pools schema — recreating...');
+        await tursoExecute("DROP TABLE IF EXISTS investor_payouts");
+        await tursoExecute("DROP TABLE IF EXISTS dividend_distributions");
+        await tursoExecute("DROP TABLE IF EXISTS investors");
+        await tursoExecute("DROP TABLE IF EXISTS investor_pools");
+        await tursoExecuteMulti([
+          { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+        ]);
+        console.log('[Web] Investor tables recreated with new schema.');
+      }
+    } catch (e) {
+      console.warn('[Web] Investor schema check/recreation failed (non-blocking):', e);
     }
 
     await tursoExecuteMulti([

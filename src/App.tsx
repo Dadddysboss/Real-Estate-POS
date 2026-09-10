@@ -23,7 +23,7 @@ import { Settings } from './components/settings/Settings';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { getUnreadCount } from './db/unifiedAdapter';
 import InstallmentEngine from './components/installment/InstallmentEngine';
-import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, ChevronLeft, Menu, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator } from 'lucide-react';
+import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator } from 'lucide-react';
 
 interface User {
   id: string;
@@ -57,7 +57,6 @@ const navigation = [
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [syncStatus, setSyncStatus] = useState<'online' | 'offline' | 'syncing'>('online');
   const [branchId, setBranchId] = useState('BRANCH_MAIN');
@@ -96,148 +95,130 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 select-text">
       {/* Sidebar */}
-      <aside className={`flex-shrink-0 h-full bg-slate-900/80 backdrop-blur-2xl border-r border-slate-800 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
-        <div className="flex flex-col h-full">
-          {/* Logo / Brand */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
-                <Building2 size={20} />
-              </div>
-              {sidebarOpen && (
-                <div className="overflow-hidden">
-                  <h1 className="text-sm font-bold text-white">Dripp ERP</h1>
-                  <p className="text-[10px] text-slate-400">DigiKhata Edition</p>
+      <aside className="w-64 flex-shrink-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col z-20 overflow-y-auto">
+        {/* Logo / Brand */}
+        <div className="p-4 border-b border-slate-800 flex items-center gap-3 flex-shrink-0">
+          <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
+            <Building2 size={20} />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="font-bold text-slate-100 text-sm tracking-wide truncate">Dripp ERP</span>
+            <span className="text-[11px] text-emerald-400 font-medium">DigiKhata Edition</span>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          {navigation.map((item) => {
+            const isActive = activeModule === item.href.replace('#', '');
+            return (
+              <button
+                key={item.name}
+                onClick={() => setActiveModule(item.href.replace('#', ''))}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
+                  isActive
+                    ? 'bg-emerald-500/10 border border-emerald-500/40 text-white'
+                    : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                }`}
+              >
+                <div className={`flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  <item.icon size={20} />
                 </div>
-              )}
+                <span className="font-semibold">{item.name}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Sync Status & User */}
+        <div className="p-4 border-t border-slate-800 space-y-3 flex-shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className={`p-2 rounded-xl ${syncStatus === 'online' ? 'bg-emerald-500/10' : syncStatus === 'syncing' ? 'bg-amber-500/10' : 'bg-rose-500/10'}`}>
+              {syncStatus === 'online' && <Wifi className="text-emerald-400" size={16} />}
+              {syncStatus === 'syncing' && <Database className="text-amber-400 animate-spin" size={16} />}
+              {syncStatus === 'offline' && <WifiOff className="text-rose-400" size={16} />}
             </div>
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              {sidebarOpen ? <ChevronLeft size={20} /> : <Menu size={20} />}
-            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-slate-300 truncate">
+                {syncStatus === 'online' && 'Turso Cloud Synced'}
+                {syncStatus === 'syncing' && 'Syncing...'}
+                {syncStatus === 'offline' && 'Offline Mode Active'}
+              </p>
+              <p className="text-[10px] text-slate-500">Local DB: IndexedDB + SQLite</p>
+            </div>
           </div>
 
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-            {navigation.map((item) => {
-              const isActive = activeModule === item.href.replace('#', '');
-              return (
-                <button
-                  key={item.name}
-                  onClick={() => setActiveModule(item.href.replace('#', ''))}
-                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                    isActive
-                      ? 'bg-emerald-500/10 border border-emerald-500/40 text-white'
-                      : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                  }`}
-                >
-                  <div className={`flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
-                    <item.icon size={20} />
-                  </div>
-                  {sidebarOpen && <span className={isActive ? 'font-semibold' : 'font-medium'}>{item.name}</span>}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Sync Status & User */}
-          <div className="p-4 border-t border-slate-800 space-y-3">
-            <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-xl ${syncStatus === 'online' ? 'bg-emerald-500/10' : syncStatus === 'syncing' ? 'bg-amber-500/10' : 'bg-rose-500/10'}`}>
-                {syncStatus === 'online' && <Wifi className="text-emerald-400" size={16} />}
-                {syncStatus === 'syncing' && <Database className="text-amber-400 animate-spin" size={16} />}
-                {syncStatus === 'offline' && <WifiOff className="text-rose-400" size={16} />}
-              </div>
-              {sidebarOpen && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-slate-300 truncate">
-                    {syncStatus === 'online' && 'Turso Cloud Synced'}
-                    {syncStatus === 'syncing' && 'Syncing...'}
-                    {syncStatus === 'offline' && 'Offline Mode Active'}
-                  </p>
-                  <p className="text-[10px] text-slate-500">Local DB: IndexedDB + SQLite</p>
-                </div>
-              )}
+          <div className="flex items-center space-x-3 p-2 bg-slate-950 rounded-xl">
+            <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
+              <ShieldCheck size={16} />
             </div>
-
-            <div className="flex items-center space-x-3 p-2 bg-slate-950 rounded-xl">
-              <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
-                <ShieldCheck size={16} />
-              </div>
-              {sidebarOpen && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-white truncate">{user?.fullName}</p>
-                  <p className="text-[10px] text-slate-400 capitalize">{user?.role?.toLowerCase()}</p>
-                </div>
-              )}
-              <button
-                onClick={handleLogout}
-                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                title="Lock Terminal (Ctrl+L)"
-              >
-                <Lock size={16} />
-              </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{user?.fullName}</p>
+              <p className="text-[10px] text-slate-400 capitalize">{user?.role?.toLowerCase()}</p>
             </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+              title="Lock Terminal (Ctrl+L)"
+            >
+              <Lock size={16} />
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 min-w-0 h-full overflow-y-auto">
+      {/* Main Content Viewport */}
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-slate-950">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-2xl border-b border-slate-800">
-          <div className="flex items-center justify-between h-16 px-6">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-lg font-bold text-white capitalize">{activeModule}</h1>
-              <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 bg-slate-800 rounded">v1.0.0</span>
+        <header className="h-16 flex-shrink-0 border-b border-slate-800 bg-slate-900/90 px-6 flex items-center justify-between z-10">
+          <div className="flex items-center space-x-4">
+            <h1 className="text-lg font-bold text-white capitalize">{activeModule}</h1>
+            <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 bg-slate-800 rounded">v1.0.0</span>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            {/* Global Search */}
+            <div className="relative hidden md:block">
+              <input
+                type="text"
+                placeholder="Search plots, leads, parties, transactions..."
+                className="bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-white w-80 focus:outline-none focus:border-emerald-500"
+              />
+              <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
             </div>
 
-            <div className="flex items-center space-x-4">
-              {/* Global Search */}
-              <div className="relative hidden md:block">
-                <input
-                  type="text"
-                  placeholder="Search plots, leads, parties, transactions..."
-                  className="bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-white w-80 focus:outline-none focus:border-emerald-500"
-                />
-                <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
-              </div>
+            {/* Notifications */}
+            <button
+              onClick={() => setNotifOpen(true)}
+              className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              title="Notifications"
+            >
+              <Bell size={20} />
+              {unreadNotifs > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
+                  {unreadNotifs > 99 ? '99+' : unreadNotifs}
+                </span>
+              )}
+            </button>
 
-              {/* Notifications */}
-              <button
-                onClick={() => setNotifOpen(true)}
-                className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-                title="Notifications"
-              >
-                <Bell size={20} />
-                {unreadNotifs > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
-                    {unreadNotifs > 99 ? '99+' : unreadNotifs}
-                  </span>
-                )}
-              </button>
-
-              {/* Quick New Deal */}
-              <button
-                onClick={() => setActiveModule('cash-counter')}
-                className="hidden sm:flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md shadow-emerald-950/40"
-              >
-                <Plus size={16} />
-                <span>New Deal</span>
-              </button>
-            </div>
+            {/* Quick New Deal */}
+            <button
+              onClick={() => setActiveModule('cash-counter')}
+              className="hidden sm:flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md shadow-emerald-950/40"
+            >
+              <Plus size={16} />
+              <span>New Deal</span>
+            </button>
           </div>
         </header>
 
         {/* Module Content */}
-        <div className="p-6">
+        <main className="flex-1 min-w-0 overflow-y-auto p-6">
           {renderModuleContent(activeModule)}
-        </div>
-      </main>
+        </main>
+      </div>
 
       {/* Notification Center Drawer */}
       <NotificationCenter isOpen={notifOpen} onClose={() => {

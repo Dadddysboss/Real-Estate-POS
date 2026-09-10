@@ -79,7 +79,7 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading branches...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">

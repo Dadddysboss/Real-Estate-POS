@@ -318,7 +318,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
   }
 
   return (
-    <div className="space-y-6 select-none">
+    <div className="page-container select-none">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -367,20 +367,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
             <button
               key={i}
               onClick={() => onNavigate?.(card.navigate)}
-              className={`text-left p-5 rounded-2xl bg-slate-900/60 border ${cc.border} ${cc.hoverBorder} transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:shadow-slate-900/50 group`}
+              className={`text-left p-5 rounded-2xl bg-slate-900 border ${cc.border} ${cc.hoverBorder} transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:shadow-slate-900/50 group flex flex-col justify-between gap-3 shadow-sm`}
               style={{ animationDelay: `${i * 80}ms` }}
             >
-              <div className="flex justify-between items-start mb-3">
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{card.label}</p>
-                  <p className="text-2xl font-bold font-mono text-white">{card.value}</p>
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-1">
+                  <span className="stat-card-label">{card.label}</span>
+                  <span className="stat-card-value">{card.value}</span>
                 </div>
                 <div className={`p-3 rounded-xl ${cc.bg} group-hover:scale-110 transition-transform`}>
                   <card.icon className={cc.text} size={22} />
                 </div>
               </div>
               <div className="flex items-center justify-between pt-3 border-t border-slate-800/60">
-                <span className="text-xs text-slate-500">{card.sub}</span>
+                <span className="stat-card-sub">{card.sub}</span>
                 <div className={`flex items-center space-x-1 text-xs font-medium ${card.trendUp ? 'text-emerald-400' : 'text-amber-400'}`}>
                   {card.trendUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                   <span>{card.trend}</span>

@@ -147,7 +147,7 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
   const totalAgreed = acquisitions.reduce((sum, acq) => sum + acq.total_agreed_price, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>

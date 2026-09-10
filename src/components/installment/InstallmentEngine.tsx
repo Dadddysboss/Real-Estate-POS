@@ -291,7 +291,7 @@ const InstallmentEngine: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6">
+    <div className="page-container">
       <div className="max-w-7xl mx-auto">
         <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
           <CreditCard className="w-6 h-6 text-emerald-400" />

@@ -123,7 +123,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
   const totalDepreciation = assets.reduce((s, a) => s + (a.purchase_price - a.current_book_value), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">

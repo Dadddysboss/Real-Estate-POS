@@ -39,6 +39,7 @@ export async function fetchPools(): Promise<any[]> {
     GROUP BY p.id ORDER BY p.created_at DESC
   `;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
+  console.log('[InvestorService] fetchPools response:', res.success, res.data?.length, res.error);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch pools');
   return res.data;
 }
@@ -155,37 +156,45 @@ export async function distributeDividend(
   const totalEquity = investorsRes.data.reduce((s, inv) => s + inv.equity_percentage, 0);
   if (totalEquity <= 0) throw new Error('No active investors in pool');
 
+  const batchId = `BATCH_${Date.now()}`;
+
   // Distribute proportionally by equity %
   for (const investor of investorsRes.data) {
     const share = Math.round((payload.profit_amount * investor.equity_percentage / totalEquity));
     
     // Create dividend record
     const divId = `DIV_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-    const divSql = `
+    await window.api.dbExecute(`
       INSERT INTO dividend_distributions (id, pool_id, investor_id, investor_name, profit_amount, distribution_date, created_at)
       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `;
-    await window.api.dbExecute(divSql, [
-      divId, payload.pool_id, investor.id, investor.investor_name,
-      share, payload.distribution_date
+    `, [divId, payload.pool_id, investor.id, investor.investor_name, share, payload.distribution_date]);
+
+    // Record payout in ledger
+    await window.api.dbExecute(`
+      INSERT INTO investor_payouts (id, pool_id, investor_id, amount_paid, payout_date, payment_mode, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, 'DIVIDEND', ?, CURRENT_TIMESTAMP)
+    `, [
+      `PAY_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      payload.pool_id, investor.id, share, payload.distribution_date,
+      `Dividend: ${payload.description || 'Profit distribution'}`
     ]);
 
-    // Also create DigiKhata entry for deposit notification
-    const khataSql = `
-      INSERT INTO digikhata_entries (id, party_name, entry_type, amount, category, description, date, reference, created_at)
-      VALUES (?, ?, 'DEBIT_DENA', ?, 'INVESTMENT', 'Dividend: ${payload.description}', ?, ?, CURRENT_TIMESTAMP)
-    `;
-    await window.api.dbExecute(khataSql, [
-      `${divId}_KHATA`, investor.investor_name, share,
-      payload.distribution_date, `DIV:${divId}`
-    ]);
+    // Update total_payout_received on investor
+    await window.api.dbExecute(`
+      UPDATE investors SET total_payout_received = COALESCE(total_payout_received, 0) + ? WHERE id = ?
+    `, [share, investor.id]);
   }
+
+  // Update pool raised_capital
+  await window.api.dbExecute(`
+    UPDATE investor_pools SET raised_capital = COALESCE(raised_capital, 0) + ? WHERE id = ?
+  `, [payload.profit_amount, payload.pool_id]);
 
   await queueMutation('INSERT', 'dividend_distributions', { pool_id: payload.pool_id, profit_amount: payload.profit_amount, date: payload.distribution_date });
   await logAudit({
     userId, userName, actionType: 'CREATE', moduleName: 'INVESTORS',
     entityId: payload.pool_id,
-    description: `Dividend distributed: Rs. ${payload.profit_amount.toLocaleString()} to ${investorsRes.data.length} investors`,
+    description: `Dividend distributed: Rs. ${payload.profit_amount.toLocaleString()} to ${investorsRes.data.length} investors (batch: ${batchId})`,
   });
 }
 
@@ -199,6 +208,48 @@ export async function fetchDividendHistory(poolId?: string): Promise<any[]> {
   sql += ` ORDER BY distribution_date DESC`;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, args);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch dividends');
+  return res.data;
+}
+
+// ------------------------------------------------------------------
+// PAYOUT LEDGER
+// ------------------------------------------------------------------
+
+export async function recordPayout(
+  userId: string,
+  userName: string,
+  payload: { pool_id: string; investor_id: string; amount: number; payment_mode?: string; notes?: string }
+): Promise<void> {
+  const payoutId = `PAY_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const now = new Date().toISOString();
+
+  // Insert payout record
+  const res = await window.api.dbExecute(`
+    INSERT INTO investor_payouts (id, pool_id, investor_id, amount_paid, payout_date, payment_mode, notes, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, [payoutId, payload.pool_id, payload.investor_id, payload.amount, now, payload.payment_mode || 'CASH', payload.notes || '', now]);
+  if (!res.success) throw new Error(res.error || 'Failed to record payout');
+
+  // Update investor's total_payout_received
+  await window.api.dbExecute(`
+    UPDATE investors SET total_payout_received = COALESCE(total_payout_received, 0) + ? WHERE id = ?
+  `, [payload.amount, payload.investor_id]);
+
+  await queueMutation('INSERT', 'investor_payouts', { id: payoutId, ...payload });
+  await logAudit({
+    userId, userName, actionType: 'CREATE', moduleName: 'INVESTORS',
+    entityId: payload.investor_id,
+    description: `Payout recorded: Rs. ${payload.amount.toLocaleString()} for investor in pool ${payload.pool_id}`,
+  });
+}
+
+export async function fetchPayouts(poolId: string): Promise<any[]> {
+  const res: DatabaseResponse<any[]> = await window.api.dbQuery(
+    `SELECT p.*, i.investor_name FROM investor_payouts p
+     LEFT JOIN investors i ON i.id = p.investor_id
+     WHERE p.pool_id = ? ORDER BY p.payout_date DESC`, [poolId]
+  );
+  if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch payouts');
   return res.data;
 }
 

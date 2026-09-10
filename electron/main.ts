@@ -1,8 +1,36 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
+
+function logToFile(msg: string) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try {
+    const logPath = path.join(app.getPath('userData'), 'crash.log');
+    fs.appendFileSync(logPath, line, 'utf-8');
+  } catch { /* best effort */ }
+  console.log(msg);
+}
 
 const TURSO_DB_URL = process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io';
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
+
+// Global crash handler — show native dialog instead of silent failure
+process.on('uncaughtException', (error) => {
+  logToFile(`[FATAL] Uncaught Exception: ${error.stack || error.message}`);
+  dialog.showErrorBox(
+    'Application Crash',
+    `An unexpected error occurred and the app needs to close.\n\n${error.stack || error.message}`
+  );
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logToFile(`[ERROR] Unhandled Rejection: ${reason instanceof Error ? (reason.stack || reason.message) : String(reason)}`);
+  dialog.showErrorBox(
+    'Application Error',
+    `An unhandled promise rejection occurred:\n\n${reason instanceof Error ? (reason.stack || reason.message) : String(reason)}`
+  );
+});
 
 function sanitizeParam(p: unknown): { type: string; value?: string } {
   if (p === undefined || p === null) return { type: 'null' };
@@ -103,6 +131,8 @@ let mainWindow: BrowserWindow | null = null;
 let printWindow: BrowserWindow | null = null;
 
 function createWindow() {
+  logToFile(`[Desktop] createWindow called. isPackaged=${app.isPackaged}, __dirname=${__dirname}`);
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 768,
@@ -117,10 +147,23 @@ function createWindow() {
   });
 
   if (process.env.VITE_DEV_SERVER_URL) {
+    logToFile(`[Desktop] Loading dev URL: ${process.env.VITE_DEV_SERVER_URL}`);
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // __dirname is dist-electron/ in both dev and packaged (asar) mode
+    // so ../dist/index.html resolves correctly in both cases
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    logToFile(`[Desktop] Loading production file: ${indexPath}`);
+    logToFile(`[Desktop] index.html exists: ${fs.existsSync(indexPath)}`);
+    mainWindow.loadFile(indexPath).catch((err) => {
+      logToFile(`[Desktop] FAILED to load app view: ${err.message}`);
+      dialog.showErrorBox('Launch Error', `Failed to load app view: ${err.message}`);
+    });
   }
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    logToFile(`[Desktop] did-fail-load: code=${errorCode} desc=${errorDescription}`);
+  });
 }
 
 function printReceiptText(receiptText: string): Promise<void> {
@@ -172,6 +215,7 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS cash_sessions (id TEXT PRIMARY KEY, branch_id TEXT, opened_by TEXT, opening_balance REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', opened_at TEXT, closed_by TEXT, closing_balance REAL, expected_balance REAL, variance REAL, closed_at TEXT)",
   "CREATE TABLE IF NOT EXISTS inventory_plots (id TEXT PRIMARY KEY, branch_id TEXT, plot_number TEXT, society_name TEXT, block_phase TEXT, size_dimension TEXT, size_value REAL DEFAULT 0, size_unit TEXT DEFAULT 'Marla', category TEXT, feature_tags TEXT, purchase_date TEXT, purchase_price REAL, target_asking_price REAL, floor_price REAL, gps_coordinates TEXT, status TEXT DEFAULT 'AVAILABLE', construction_status TEXT DEFAULT 'NONE', notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS sales_transactions (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, final_sale_price REAL, cost_basis REAL, development_costs REAL DEFAULT 0, agent_commission REAL DEFAULT 0, government_taxes REAL DEFAULT 0, net_profit_calculated REAL, payment_method TEXT, agent_id TEXT, sale_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS sales_deals (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, cash_counter_id TEXT, buyer_name TEXT NOT NULL, buyer_phone TEXT NOT NULL, buyer_cnic TEXT, total_deal_price REAL NOT NULL, down_payment REAL DEFAULT 0, balance_amount REAL DEFAULT 0, sales_agent TEXT, payment_mode TEXT DEFAULT 'CASH', sale_date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS sale_payment_breakdowns (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, payment_method TEXT NOT NULL, transaction_ref TEXT, amount REAL NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS installment_plans (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, total_sale_price REAL, down_payment REAL, plan_duration_months INTEGER, monthly_installment_amount REAL, start_date TEXT, due_day_of_month INTEGER, grace_period_days INTEGER DEFAULT 5, late_penalty_fee REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS installment_schedules (id TEXT PRIMARY KEY, plan_id TEXT, installment_number INTEGER, due_date TEXT, amount_due REAL, amount_paid REAL DEFAULT 0, late_fine_charged REAL DEFAULT 0, discount_applied REAL DEFAULT 0, payment_date TEXT, payment_method TEXT, status TEXT DEFAULT 'PENDING', created_at TEXT DEFAULT (datetime('now')))",
@@ -225,9 +269,35 @@ async function initializeDatabase() {
       "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
       "ALTER TABLE construction_expenses ADD COLUMN supplier_name TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
+      // Investor pools — align old DBs with new schema
+      "ALTER TABLE investor_pools ADD COLUMN total_target_capital REAL DEFAULT 0",
+      "ALTER TABLE investor_pools ADD COLUMN description TEXT DEFAULT ''",
+      "ALTER TABLE investor_pools ADD COLUMN branch_id TEXT",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }
+    }
+
+    // Drop and recreate investor tables if schema is outdated
+    try {
+      const checkRes = await tursoExecute("PRAGMA table_info(investor_pools)");
+      const poolCols = (checkRes.rows || []).map((r: Record<string, unknown>) => String(r.name || ''));
+      if (poolCols.includes('target_capital') && !poolCols.includes('total_target_capital')) {
+        console.log('[Desktop] Detected outdated investor_pools schema — recreating...');
+        await tursoExecute("DROP TABLE IF EXISTS investor_payouts");
+        await tursoExecute("DROP TABLE IF EXISTS dividend_distributions");
+        await tursoExecute("DROP TABLE IF EXISTS investors");
+        await tursoExecute("DROP TABLE IF EXISTS investor_pools");
+        await tursoExecuteMulti([
+          { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+        ]);
+        console.log('[Desktop] Investor tables recreated with new schema.');
+      }
+    } catch (e) {
+      console.warn('[Desktop] Investor schema check/recreation failed (non-blocking):', e);
     }
 
     await tursoExecuteMulti([
@@ -244,17 +314,30 @@ async function initializeDatabase() {
 }
 
 app.whenReady().then(async () => {
-  await initializeDatabase();
+  logToFile('[Desktop] app.whenReady fired');
 
-  ipcMain.handle('db:execute', async (_event, { sql, args }) => {
-    try {
-      const result = await tursoExecute(sql, args || []);
-      return { success: true, data: result };
-    } catch (err) {
-      console.error('[Desktop DB Execute Error]', err);
-      return { success: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  });
+  try {
+    logToFile('[Desktop] Initializing database...');
+    await initializeDatabase();
+    logToFile('[Desktop] Database initialized successfully');
+  } catch (err: any) {
+    logToFile(`[Desktop] DB init failed: ${err.message || String(err)}`);
+    dialog.showErrorBox(
+      'Database / Startup Failure',
+      `Error initializing application database:\n\n${err.message || String(err)}`
+    );
+  }
+
+  try {
+    ipcMain.handle('db:execute', async (_event, { sql, args }) => {
+      try {
+        const result = await tursoExecute(sql, args || []);
+        return { success: true, data: result };
+      } catch (err) {
+        console.error('[Desktop DB Execute Error]', err);
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
 
   ipcMain.handle('db:query', async (_event, { sql, args }) => {
     try {
@@ -413,6 +496,14 @@ app.whenReady().then(async () => {
   });
 
   createWindow();
+  logToFile('[Desktop] createWindow() completed');
+  } catch (err: any) {
+    logToFile(`[Desktop] IPC/Window init failed: ${err.stack || err.message || String(err)}`);
+    dialog.showErrorBox(
+      'Application Startup Failure',
+      `Error starting the application:\n\n${err.message || String(err)}`
+    );
+  }
 });
 
 app.on('window-all-closed', () => {

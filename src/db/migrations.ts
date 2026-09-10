@@ -276,6 +276,47 @@ CREATE TABLE IF NOT EXISTS sales_transactions (
 );
 
 -- ============================================================================
+-- MODULE 10b: SALES DEALS (INSTANT PLOT SALE RECORDS)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS sales_deals (
+  id TEXT PRIMARY KEY,
+  plot_id TEXT NOT NULL,
+  cash_counter_id TEXT,
+  buyer_name TEXT NOT NULL,
+  buyer_phone TEXT NOT NULL,
+  buyer_cnic TEXT,
+  total_deal_price REAL NOT NULL,
+  down_payment REAL DEFAULT 0,
+  balance_amount REAL DEFAULT 0,
+  sales_agent TEXT,
+  payment_mode TEXT DEFAULT 'CASH',
+  sale_date TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (plot_id) REFERENCES inventory_plots(id)
+);
+
+-- ============================================================================
+-- MODULE 10c: CASH COUNTER TRANSACTION LOG
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS cash_counter (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('INFLOW', 'OUTFLOW')),
+    category TEXT NOT NULL,
+    amount REAL NOT NULL,
+    notes TEXT,
+    handed_over_by TEXT,
+    received_by TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+-- ============================================================================
 -- MODULE 11: INSTALLMENT ENGINE & PAYMENT SCHEDULES
 -- ============================================================================
 
@@ -345,37 +386,51 @@ CREATE TABLE IF NOT EXISTS digikhata_entries (
 
 CREATE TABLE IF NOT EXISTS investor_pools (
     id TEXT PRIMARY KEY,
-    branch_id TEXT NOT NULL,
+    branch_id TEXT,
     pool_name TEXT NOT NULL,
-    target_capital REAL NOT NULL,
+    total_target_capital REAL NOT NULL DEFAULT 0,
     raised_capital REAL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'ACTIVE', 'CLOSED', 'LIQUIDATED')),
+    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('OPEN', 'ACTIVE', 'CLOSED', 'COMPLETED', 'LIQUIDATED')),
+    description TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
+    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS investor_members (
+CREATE TABLE IF NOT EXISTS investors (
     id TEXT PRIMARY KEY,
     pool_id TEXT NOT NULL,
     investor_name TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    invested_amount REAL NOT NULL,
-    equity_percentage REAL NOT NULL,
+    phone_number TEXT,
+    cnic TEXT,
+    contributed_amount REAL DEFAULT 0,
+    equity_percentage REAL DEFAULT 0,
     total_payout_received REAL DEFAULT 0,
+    created_at TEXT,
+    FOREIGN KEY (pool_id) REFERENCES investor_pools(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dividend_distributions (
+    id TEXT PRIMARY KEY,
+    pool_id TEXT NOT NULL,
+    investor_id TEXT NOT NULL,
+    investor_name TEXT NOT NULL,
+    profit_amount REAL NOT NULL,
+    distribution_date TEXT,
+    created_at TEXT,
     FOREIGN KEY (pool_id) REFERENCES investor_pools(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS investor_payouts (
     id TEXT PRIMARY KEY,
-    batch_id TEXT NOT NULL,
     pool_id TEXT NOT NULL,
-    member_id TEXT NOT NULL,
-    amount_paid REAL NOT NULL,
-    equity_percentage REAL NOT NULL,
+    investor_id TEXT NOT NULL,
+    amount_paid REAL DEFAULT 0,
+    payout_date TEXT,
+    payment_mode TEXT DEFAULT 'CASH',
     notes TEXT,
-    created_at TEXT NOT NULL,
+    created_at TEXT,
     FOREIGN KEY (pool_id) REFERENCES investor_pools(id) ON DELETE CASCADE,
-    FOREIGN KEY (member_id) REFERENCES investor_members(id) ON DELETE CASCADE
+    FOREIGN KEY (investor_id) REFERENCES investors(id) ON DELETE CASCADE
 );
 
 -- ============================================================================

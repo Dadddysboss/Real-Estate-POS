@@ -298,7 +298,7 @@ const WhatsAppGateway: React.FC = () => {
   const categories = [...new Set(templates.map(t => t.category).filter(Boolean))] as string[];
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

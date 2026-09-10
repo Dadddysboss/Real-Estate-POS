@@ -9,7 +9,7 @@ const CRMKanban: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="page-container">
       <h1>CRM Kanban - Site Visit Scheduling</h1>
       <button
         onClick={() =>

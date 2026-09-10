@@ -49,7 +49,7 @@ export const TaxCalculator: React.FC<TaxCalculatorProps> = ({ currentUser }) => 
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       <div>
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Calculator size={24} className="text-amber-400" /> Automated Tax & Duty Calculator

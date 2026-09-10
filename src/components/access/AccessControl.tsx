@@ -119,7 +119,7 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
   const adminCount = staff.filter(s => s.role === 'ADMIN').length;
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">

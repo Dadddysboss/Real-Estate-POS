@@ -7,6 +7,29 @@ import {
   fetchPlots, createPlot, updatePlot, deletePlot, countPlotsByStatus,
   PLOT_CATEGORIES, PLOT_STATUSES, parseFeatureTags,
 } from '../../services/inventory.service';
+import { PlotSaleDetailModal } from '../sales/PlotSaleDetailModal';
+
+interface SalesDealRow {
+  id: string;
+  deal_id: string | null;
+  plot_id: string;
+  cash_counter_id: string;
+  buyer_name: string;
+  buyer_phone: string;
+  buyer_cnic: string;
+  total_deal_price: number;
+  down_payment: number;
+  balance_amount: number;
+  sales_agent: string;
+  payment_mode: string;
+  sale_date: string;
+  notes: string;
+  created_at: string;
+  plot_number?: string;
+  society_name?: string;
+  block_phase?: string;
+  size_dimension?: string;
+}
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 
@@ -104,6 +127,8 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [selected, setSelected] = useState<PlotRecord | null>(null);
+  const [selectedDeal, setSelectedDeal] = useState<SalesDealRow | null>(null);
+  const [showDealModal, setShowDealModal] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -118,6 +143,25 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load plots' });
     }
     setLoading(false);
+  };
+
+  const fetchDealByPlot = async (plotId: string) => {
+    try {
+      const res = await window.api.dbQuery<SalesDealRow>(
+        `SELECT sd.id AS deal_id, sd.*, ip.plot_number, ip.society_name, ip.block_phase, ip.size_dimension
+         FROM sales_deals sd
+         INNER JOIN inventory_plots ip ON sd.plot_id = ip.id
+         WHERE sd.plot_id = ?`,
+        [plotId]
+      );
+      if (res.success && res.data && res.data.length > 0) {
+        const row = res.data[0];
+        setSelectedDeal({ ...row, id: row.deal_id || row.id });
+        setShowDealModal(true);
+      }
+    } catch {
+      // Silently handle
+    }
   };
 
   useEffect(() => {
@@ -224,7 +268,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
   }, [statusCounts]);
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header + Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -302,7 +346,17 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
       ) : view === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((plot) => (
-            <button key={plot.id} onClick={() => setSelected(plot)} className="glass-card glass-card-hover p-5 text-left space-y-3">
+            <button
+              key={plot.id}
+              onClick={() => {
+                if (plot.status === 'SOLD') {
+                  fetchDealByPlot(plot.id);
+                } else {
+                  setSelected(plot);
+                }
+              }}
+              className="glass-card glass-card-hover p-5 text-left space-y-3"
+            >
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${STATUS_STYLE[plot.category]} ${plot.category === 'RESIDENTIAL' ? 'status-emerald' : plot.category === 'COMMERCIAL' ? 'status-sky' : plot.category === 'INDUSTRIAL' ? 'status-purple' : 'status-amber'}`}>
@@ -365,7 +419,17 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {filtered.map((plot) => (
-                <tr key={plot.id} className="hover:bg-slate-800/30 cursor-pointer" onClick={() => setSelected(plot)}>
+                <tr
+                  key={plot.id}
+                  className={`hover:bg-slate-800/30 cursor-pointer ${plot.status === 'SOLD' ? 'bg-rose-500/5' : ''}`}
+                  onClick={() => {
+                    if (plot.status === 'SOLD') {
+                      fetchDealByPlot(plot.id);
+                    } else {
+                      setSelected(plot);
+                    }
+                  }}
+                >
                   <td className="py-2.5 pr-4 font-semibold text-white">{plot.plot_number}</td>
                   <td className="py-2.5 pr-4 text-slate-300">{plot.society_name}</td>
                   <td className="py-2.5 pr-4 text-slate-400">{plot.block_phase}</td>
@@ -384,10 +448,14 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   </td>
                   <td className="py-2.5 text-right">
                     <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => { setEditing(plot); setForm(formToState(plot)); setShowForm(true); }}
-                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg"><Pencil size={13} /></button>
-                      <button onClick={() => handleDelete(plot)}
-                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 size={13} /></button>
+                      {plot.status !== 'SOLD' && (
+                        <>
+                          <button onClick={() => { setEditing(plot); setForm(formToState(plot)); setShowForm(true); }}
+                            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg"><Pencil size={13} /></button>
+                          <button onClick={() => handleDelete(plot)}
+                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 size={13} /></button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -407,15 +475,27 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
               <div className="overflow-x-auto pb-2">
                 <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', minWidth: 640 }}>
                   {blockPlots.map((plot) => (
-                    <button key={plot.id} onClick={() => setSelected(plot)}
+                    <button
+                      key={plot.id}
+                      onClick={() => {
+                        if (plot.status === 'SOLD') {
+                          fetchDealByPlot(plot.id);
+                        } else {
+                          setSelected(plot);
+                        }
+                      }}
                       className="p-3 rounded-xl border text-left transition-all hover:-translate-y-0.5"
-                      style={{ backgroundColor: `${STATUS_DOT[plot.status]}1a`, borderColor: `${STATUS_DOT[plot.status]}55` }}>
+                      style={{ backgroundColor: `${STATUS_DOT[plot.status]}1a`, borderColor: `${STATUS_DOT[plot.status]}55` }}
+                    >
                       <div className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_DOT[plot.status] }} />
                         <span className="text-[10px] font-bold text-white truncate">#{plot.plot_number}</span>
                       </div>
                       <p className="text-[9px] text-slate-400 mt-1 truncate">{plot.size_dimension}</p>
                       <p className="text-[9px] font-mono text-slate-300 mt-0.5 truncate">{fmt(plot.target_asking_price)}</p>
+                      {plot.status === 'SOLD' && (
+                        <span className="text-[8px] font-bold text-rose-400 block mt-0.5">SOLD</span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -525,8 +605,8 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         </div>
       )}
 
-      {/* Detail Slide-Over */}
-      {selected && (
+      {/* Detail Slide-Over (non-SOLD plots only) */}
+      {selected && selected.status !== 'SOLD' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={() => setSelected(null)}>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-slate-800">
@@ -579,6 +659,77 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
             </div>
           </div>
         </div>
+      )}
+
+      {/* Plot Sale Detail Modal */}
+      {showDealModal && selectedDeal && (
+        <PlotSaleDetailModal
+          deal={selectedDeal}
+          onClose={() => { setShowDealModal(false); setSelectedDeal(null); }}
+          onPrintReceipt={async (deal) => {
+            const lines: string[] = [];
+            lines.push('═══════════════════════════════════════════════');
+            lines.push('            SALE RECEIPT');
+            lines.push('═══════════════════════════════════════════════');
+            lines.push(`  Receipt # : ${deal.id}`);
+            lines.push(`  Cash Ref  : ${deal.cash_counter_id}`);
+            lines.push(`  Date      : ${deal.sale_date}`);
+            lines.push('───────────────────────────────────────────────');
+            lines.push(`  Buyer     : ${deal.buyer_name || '—'}`);
+            if (deal.buyer_phone) lines.push(`  Phone     : ${deal.buyer_phone}`);
+            if (deal.buyer_cnic) lines.push(`  CNIC      : ${deal.buyer_cnic}`);
+            lines.push('───────────────────────────────────────────────');
+            lines.push(`  Plot      : ${deal.plot_number || '—'}`);
+            lines.push(`  Society   : ${deal.society_name || '—'}`);
+            lines.push(`  Block     : ${deal.block_phase || '—'}`);
+            lines.push(`  Size      : ${deal.size_dimension || '—'}`);
+            lines.push('───────────────────────────────────────────────');
+            lines.push(`  Total Price  : ${fmt(deal.total_deal_price)}`);
+            lines.push(`  Down Payment : ${fmt(deal.down_payment)}`);
+            lines.push(`  Balance      : ${fmt(deal.balance_amount)}`);
+            lines.push(`  Payment Mode : ${deal.payment_mode}`);
+            lines.push(`  Agent        : ${deal.sales_agent || '—'}`);
+            lines.push('═══════════════════════════════════════════════');
+            lines.push('          Thank you for your purchase!');
+            lines.push('═══════════════════════════════════════════════');
+            const receiptText = lines.join('\n');
+            try {
+              const res = await window.api.printReceipt(receiptText);
+              if (!res.success) throw new Error(res.error || 'Print failed');
+              setMessage({ type: 'success', text: 'Receipt sent to printer.' });
+            } catch (err) {
+              setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Print failed' });
+            }
+            setShowDealModal(false);
+            setSelectedDeal(null);
+          }}
+          onSendWhatsApp={(deal) => {
+            const msg = encodeURIComponent(
+              `🏠 Sale Confirmation\n` +
+              `Deal #${deal.id}\n` +
+              `Plot: ${deal.plot_number} (${deal.society_name}, Block ${deal.block_phase})\n` +
+              `Buyer: ${deal.buyer_name}\n` +
+              `Phone: ${deal.buyer_phone}\n` +
+              `Total Price: ${fmt(deal.total_deal_price)}\n` +
+              `Balance: ${fmt(deal.balance_amount)}\n` +
+              `Thank you for your purchase!`
+            );
+            window.open(`https://wa.me/${deal.buyer_phone}?text=${msg}`, '_blank');
+            setMessage({ type: 'success', text: 'Opening WhatsApp...' });
+          }}
+          onEditNotes={async (deal, newNotes) => {
+            const res = await window.api.dbExecute(
+              `UPDATE sales_deals SET notes = ? WHERE id = ?`,
+              [newNotes, deal.id]
+            );
+            if (res.success) {
+              setMessage({ type: 'success', text: 'Notes updated.' });
+              await loadData();
+            } else {
+              setMessage({ type: 'error', text: 'Failed to update notes.' });
+            }
+          }}
+        />
       )}
     </div>
   );
