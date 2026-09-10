@@ -68,16 +68,19 @@ const AgentNetwork: React.FC = () => {
   const fetchAgents = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await window.api.dbQuery<Agent>(
+      const res = await window.api.dbQuery(
         'SELECT * FROM agents ORDER BY created_at DESC',
         []
       );
+      console.log('[AgentNetwork] fetchAgents:', res.success, res.data?.length, res.error);
       if (res.success && res.data) {
-        setAgents(res.data);
+        setAgents(res.data as Agent[]);
       } else {
+        console.error('[AgentNetwork] fetchAgents failed:', res.error);
         setMessage({ type: 'error', text: res.error || 'Failed to fetch agents' });
       }
     } catch (err) {
+      console.error('[AgentNetwork] fetchAgents exception:', err);
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to fetch agents' });
     } finally {
       setLoading(false);
@@ -135,8 +138,8 @@ const AgentNetwork: React.FC = () => {
       setSubmitting(true);
       const now = new Date().toISOString();
       const res = await window.api.dbExecute(
-        `INSERT INTO agents (id, agent_name, agency_name, phone_number, cnic, commission_type, commission_rate, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+        `INSERT INTO agents (id, agent_name, agency_name, phone_number, cnic, commission_type, commission_rate, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           `AGT-${Date.now()}`,
           form.agent_name.trim(),
@@ -145,7 +148,6 @@ const AgentNetwork: React.FC = () => {
           form.cnic.trim(),
           form.commission_type,
           rate,
-          now,
           now,
         ]
       );

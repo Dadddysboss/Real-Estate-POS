@@ -30,18 +30,29 @@ export interface DividendPayload {
 // ------------------------------------------------------------------
 
 export async function fetchPools(): Promise<any[]> {
-  const sql = `
-    SELECT p.*, 
-      COALESCE(SUM(i.contributed_amount), 0) as total_raised,
-      COUNT(i.id) as investor_count
-    FROM investor_pools p
-    LEFT JOIN investors i ON i.pool_id = p.id
-    GROUP BY p.id ORDER BY p.created_at DESC
-  `;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
-  console.log('[InvestorService] fetchPools response:', res.success, res.data?.length, res.error);
-  if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch pools');
-  return res.data;
+  // Simple query — no GROUP BY with SELECT * (causes silent failures in SQLite/Turso)
+  const poolRes: DatabaseResponse<any[]> = await window.api.dbQuery(
+    'SELECT * FROM investor_pools ORDER BY created_at DESC', []
+  );
+  console.log('[InvestorService] fetchPools pools:', poolRes.success, poolRes.data?.length, poolRes.error);
+  if (!poolRes.success || !poolRes.data) throw new Error(poolRes.error || 'Failed to fetch pools');
+
+  // Fetch investor counts and totals per pool
+  const invRes: DatabaseResponse<any[]> = await window.api.dbQuery(
+    'SELECT pool_id, COUNT(id) as cnt, COALESCE(SUM(contributed_amount), 0) as raised FROM investors GROUP BY pool_id', []
+  );
+  const invMap: Record<string, { cnt: number; raised: number }> = {};
+  if (invRes.success && invRes.data) {
+    for (const row of invRes.data) {
+      invMap[row.pool_id] = { cnt: Number(row.cnt) || 0, raised: Number(row.raised) || 0 };
+    }
+  }
+
+  return poolRes.data.map(p => ({
+    ...p,
+    total_raised: invMap[p.id]?.raised || 0,
+    investor_count: invMap[p.id]?.cnt || 0,
+  }));
 }
 
 export async function createPool(
