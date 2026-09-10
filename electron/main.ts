@@ -15,7 +15,14 @@ function sanitizeParam(p: unknown): { type: string; value?: string } {
 function sanitizeRow(row: Record<string, unknown>): Record<string, unknown> {
   const safe: Record<string, unknown> = {};
   for (const key in row) {
-    safe[key] = row[key] === null || row[key] === undefined ? '' : row[key];
+    const val = row[key];
+    if (val === null || val === undefined) {
+      safe[key] = '';
+    } else if (typeof val === 'object') {
+      safe[key] = JSON.stringify(val);
+    } else {
+      safe[key] = val;
+    }
   }
   return safe;
 }
@@ -47,7 +54,7 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
   const data = await response.json();
   const result = data.results?.[0];
   if (!result || !result.response) {
-    throw new Error('Empty response from Turso');
+    return { rows: [] };
   }
   if (result.response.type === 'error') {
     throw new Error(result.response.message || 'Turso execution error');

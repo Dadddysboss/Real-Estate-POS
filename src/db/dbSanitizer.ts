@@ -35,6 +35,8 @@ export function sanitizeRecordFromDB<T extends Record<string, unknown>>(row: T):
     const val = row[key];
     if (val === null || val === undefined) {
       safe[key] = '';
+    } else if (typeof val === 'object') {
+      safe[key] = JSON.stringify(val);
     } else {
       safe[key] = val;
     }

@@ -221,17 +221,34 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
     setBackupInProgress(true);
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const backupFileName = `digikhata_vault_backup_${timestamp}.sqlite`;
+      const backupFileName = `digikhata_vault_backup_${timestamp}.json`;
       
-      const sql = `VACUUM INTO ?`;
-      const res = await window.api.dbExecute(sql, [backupFileName]);
-      
-      if (res.success) {
-        setLastBackup(new Date().toISOString());
-        setMessage({ type: 'success', text: `Database backup created: ${backupFileName}` });
-      } else {
-        throw new Error(res.error);
+      const tables = [
+        'users', 'branches', 'inventory_plots', 'leads', 'sales_transactions',
+        'installment_plans', 'installment_schedules', 'digikhata_parties', 'digikhata_entries',
+        'construction_expenses', 'expenses', 'documents', 'agency_settings', 'system_settings',
+      ];
+      const backup: Record<string, unknown[]> = {};
+      for (const table of tables) {
+        try {
+          const res = await window.api.dbQuery(`SELECT * FROM ${table}`, []);
+          backup[table] = res.success && Array.isArray(res.data) ? res.data : [];
+        } catch {
+          backup[table] = [];
+        }
       }
+      
+      const json = JSON.stringify(backup, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = backupFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      setLastBackup(new Date().toISOString());
+      setMessage({ type: 'success', text: `Vault backup created: ${backupFileName}` });
     } catch (error) {
       setMessage({ type: 'error', text: `Backup failed: ${(error as Error).message}` });
     } finally {

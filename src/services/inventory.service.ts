@@ -197,8 +197,9 @@ export async function countPlotsByStatus(branchId: string): Promise<{ status: Pl
 
 export function parseFeatureTags(tags: string | null | undefined): string[] {
   if (!tags) return [];
+  if (Array.isArray(tags)) return tags.filter((t): t is string => typeof t === 'string');
   try {
-    const parsed: unknown = JSON.parse(tags);
+    const parsed: unknown = JSON.parse(String(tags));
     return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
   } catch {
     return [];
