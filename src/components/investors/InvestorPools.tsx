@@ -91,19 +91,17 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       return;
     }
     try {
-      const poolId = await createPool(currentUser.id, currentUser.fullName, {
+      await createPool(currentUser.id, currentUser.fullName, {
         pool_name: poolName.trim(),
         total_target_capital: targetCapital,
         description: description.trim(),
         status: poolStatus,
       });
-      // Re-fetch to confirm pool actually exists in DB
-      await loadData();
-      const confirmed = pools.some(p => p.id === poolId) || (await (async () => { const d = await fetchPools(); return d.some(p => p.id === poolId); })());
-      if (!confirmed) {
-        setMessage({ type: 'error', text: 'Pool was created but could not be found in database. Please refresh.' });
-        return;
-      }
+      // Force immediate re-fetch from DB (not relying on stale state)
+      const freshPools = await fetchPools();
+      console.log('[InvestorPools] After create, fresh pools:', freshPools.length, freshPools);
+      setPools(freshPools);
+      if (freshPools.length > 0) setSelectedPool(freshPools[0]);
       setMessage({ type: 'success', text: 'Pool created successfully' });
       setShowPoolForm(false);
       resetPoolForm();
