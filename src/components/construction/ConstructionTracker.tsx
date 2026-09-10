@@ -35,59 +35,61 @@ interface PlotRecord {
 interface ConstructionExpense {
   id: string;
   plot_id: string;
+  category?: string;
   material_type: string;
+  item_name?: string;
   quantity: number;
+  unit_price?: number;
   rate: number;
   total_amount: number;
   supplier_name: string;
+  labor_name?: string;
   expense_date: string;
   created_by: string;
   created_at: string;
 }
 
 interface ExpenseForm {
-  rait_qty: string;
-  rait_rate: string;
-  bajri_qty: string;
-  bajri_rate: string;
-  bricks_qty: string;
-  bricks_rate: string;
-  sarya_qty: string;
-  sarya_rate: string;
-  cement_qty: string;
-  cement_rate: string;
-  labor_amount: string;
+  category: string;
+  item_name: string;
+  quantity: string;
+  rate: string;
   supplier_name: string;
+  labor_name: string;
+  labor_daily_wage: string;
+  labor_days: string;
+  labor_workers: string;
+  labor_payment_date: string;
   expense_date: string;
+  notes: string;
 }
 
 const fmt = (n: number): string => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 const emptyForm: ExpenseForm = {
-  rait_qty: '',
-  rait_rate: '',
-  bajri_qty: '',
-  bajri_rate: '',
-  bricks_qty: '',
-  bricks_rate: '',
-  sarya_qty: '',
-  sarya_rate: '',
-  cement_qty: '',
-  cement_rate: '',
-  labor_amount: '',
+  category: 'MATERIAL',
+  item_name: '',
+  quantity: '',
+  rate: '',
   supplier_name: '',
+  labor_name: '',
+  labor_daily_wage: '',
+  labor_days: '',
+  labor_workers: '',
+  labor_payment_date: new Date().toISOString().split('T')[0],
   expense_date: new Date().toISOString().split('T')[0],
+  notes: '',
 };
 
-const MATERIAL_FIELDS: { key: string; label: string; labelUrdu: string; unit: string }[] = [
-  { key: 'rait', label: 'Rait (Sand)', labelUrdu: 'ریت', unit: 'tons' },
-  { key: 'bajri', label: 'Bajri (Crushed Stone)', labelUrdu: 'بجری', unit: 'tons' },
-  { key: 'bricks', label: 'Bricks (Eent)', labelUrdu: 'اینٹ', unit: 'pcs' },
-  { key: 'sarya', label: 'Sarya (Steel Rebar)', labelUrdu: 'سریا', unit: 'kg' },
-  { key: 'cement', label: 'Cement Bags', labelUrdu: 'سیمنٹ', unit: 'bags' },
+const EXPENSE_CATEGORIES = [
+  { value: 'MATERIAL', label: 'Material Purchase' },
+  { value: 'LABOR', label: 'Labor / Mazdoor' },
+  { value: 'TRANSPORT', label: 'Transport' },
+  { value: 'ELECTRICITY', label: 'Electricity / Water' },
+  { value: 'MISC', label: 'Miscellaneous' },
 ];
 
-export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ currentUser }) => {
+export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ currentUser: _currentUser }) => {
   const [plots, setPlots] = useState<PlotRecord[]>([]);
   const [expenses, setExpenses] = useState<Record<string, ConstructionExpense[]>>({});
   const [selectedPlot, setSelectedPlot] = useState<PlotRecord | null>(null);
@@ -96,6 +98,8 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>({ ...emptyForm });
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailPlot, setDetailPlot] = useState<PlotRecord | null>(null);
 
   const fetchPlots = useCallback(async () => {
     try {
@@ -156,79 +160,48 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
   };
 
   const calculateFormTotal = (): number => {
-    let total = 0;
-    MATERIAL_FIELDS.forEach((m) => {
-      const qty = parseFloat(expenseForm[`${m.key}_qty` as keyof ExpenseForm] as string) || 0;
-      const rate = parseFloat(expenseForm[`${m.key}_rate` as keyof ExpenseForm] as string) || 0;
-      total += qty * rate;
-    });
-    total += parseFloat(expenseForm.labor_amount) || 0;
-    return total;
+    if (expenseForm.category === 'LABOR') {
+      const dailyWage = parseFloat(expenseForm.labor_daily_wage) || 0;
+      const days = parseFloat(expenseForm.labor_days) || 0;
+      const workers = parseFloat(expenseForm.labor_workers) || 1;
+      return dailyWage * days * workers;
+    }
+    const qty = parseFloat(expenseForm.quantity) || 0;
+    const rate = parseFloat(expenseForm.rate) || 0;
+    return qty * rate;
   };
 
   const handleSubmitExpense = async () => {
     if (!selectedPlot) return;
 
-    if (!expenseForm.supplier_name.trim()) {
-      setMessage({ type: 'error', text: 'Supplier name is required' });
-      return;
-    }
-
     setSubmitting(true);
-    const now = new Date().toISOString();
-    let insertedCount = 0;
-
     try {
-      for (const m of MATERIAL_FIELDS) {
-        const qty = parseFloat(expenseForm[`${m.key}_qty` as keyof ExpenseForm] as string) || 0;
-        const rate = parseFloat(expenseForm[`${m.key}_rate` as keyof ExpenseForm] as string) || 0;
-        if (qty > 0 && rate > 0) {
-          const res = await window.api.dbExecute(
-            `INSERT INTO construction_expenses (id, plot_id, material_type, quantity, rate, total_amount, supplier_name, expense_date, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              `CE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              selectedPlot.id,
-              m.key.toUpperCase(),
-              qty,
-              rate,
-              qty * rate,
-              expenseForm.supplier_name.trim(),
-              expenseForm.expense_date,
-              currentUser.id,
-              now,
-            ]
-          );
-          if (res.success) insertedCount++;
-        }
-      }
+      const res = await window.api.dbExecute(
+        `INSERT INTO construction_expenses (id, plot_id, category, material_type, item_name, quantity, unit_price, rate, total_amount, supplier_name, labor_name, expense_date, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+        [
+          `CE_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+          selectedPlot.id,
+          expenseForm.category,
+          expenseForm.category === 'LABOR' ? 'LABOR' : expenseForm.item_name || expenseForm.category,
+          expenseForm.item_name || (expenseForm.category === 'LABOR' ? expenseForm.labor_name : ''),
+          parseFloat(expenseForm.quantity) || (expenseForm.category === 'LABOR' ? (parseFloat(expenseForm.labor_days) || 0) * (parseFloat(expenseForm.labor_workers) || 1) : 1),
+          parseFloat(expenseForm.rate) || (expenseForm.category === 'LABOR' ? parseFloat(expenseForm.labor_daily_wage) || 0 : 0),
+          parseFloat(expenseForm.rate) || 0,
+          parseFloat(expenseForm.quantity || '0') * parseFloat(expenseForm.rate || '0') || (expenseForm.category === 'LABOR' ? (parseFloat(expenseForm.labor_daily_wage) || 0) * (parseFloat(expenseForm.labor_days) || 0) * (parseFloat(expenseForm.labor_workers) || 1) : 0),
+          expenseForm.supplier_name || expenseForm.labor_name || '',
+          expenseForm.labor_name || '',
+          expenseForm.expense_date,
+        ]
+      );
 
-      const laborAmt = parseFloat(expenseForm.labor_amount) || 0;
-      if (laborAmt > 0) {
-        const res = await window.api.dbExecute(
-          `INSERT INTO construction_expenses (id, plot_id, material_type, quantity, rate, total_amount, supplier_name, expense_date, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            `CE-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            selectedPlot.id,
-            'LABOR',
-            1,
-            laborAmt,
-            laborAmt,
-            expenseForm.supplier_name.trim(),
-            expenseForm.expense_date,
-            currentUser.id,
-            now,
-          ]
-        );
-        if (res.success) insertedCount++;
-      }
-
-      if (insertedCount > 0) {
-        setMessage({ type: 'success', text: `${insertedCount} expense(s) recorded successfully` });
+      if (res.success) {
+        setMessage({ type: 'success', text: 'Expense recorded successfully' });
         setExpenseForm({ ...emptyForm });
         setShowExpenseForm(false);
         await fetchExpensesForPlot(selectedPlot.id);
       } else {
-        setMessage({ type: 'error', text: 'Enter at least one material quantity and rate' });
+        setMessage({ type: 'error', text: res.error || 'Failed to record expense' });
       }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record expenses' });
@@ -391,6 +364,14 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
                   <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
                     <span>{fmt(totalSpent)} spent</span>
                     <span>{spentPct.toFixed(0)}% of budget</span>
+                  </div>
+                  <div className="mt-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDetailPlot(plot); setShowDetailModal(true); fetchExpensesForPlot(plot.id); }}
+                      className="px-3 py-1.5 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 rounded-lg text-xs font-semibold transition"
+                    >
+                      View Details
+                    </button>
                   </div>
                 </button>
               );
@@ -566,7 +547,7 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <HardHat size={18} className="text-amber-400" />
-                  Daily Construction Expense
+                  Record Expense
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Plot {selectedPlot.plot_number} · {selectedPlot.society_name}
@@ -579,20 +560,139 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
 
             {/* Modal Body */}
             <div className="p-5 space-y-5">
-              {/* Supplier & Date Row */}
+              {/* Category Selection */}
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Category *</label>
+                <select
+                  value={expenseForm.category}
+                  onChange={(e) => updateFormField('category', e.target.value)}
+                  className="input-base"
+                >
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* MATERIAL Fields */}
+              {expenseForm.category !== 'LABOR' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Item Name</label>
+                    <input
+                      type="text"
+                      value={expenseForm.item_name}
+                      onChange={(e) => updateFormField('item_name', e.target.value)}
+                      className="input-base"
+                      placeholder="e.g., Sand, Cement, Bricks..."
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Quantity</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={expenseForm.quantity}
+                        onChange={(e) => updateFormField('quantity', e.target.value)}
+                        className="input-base font-mono"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Rate (Rs.)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={expenseForm.rate}
+                        onChange={(e) => updateFormField('rate', e.target.value)}
+                        className="input-base font-mono"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Supplier Name</label>
+                    <input
+                      type="text"
+                      value={expenseForm.supplier_name}
+                      onChange={(e) => updateFormField('supplier_name', e.target.value)}
+                      className="input-base"
+                      placeholder="e.g., Khan Builders Supply"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* LABOR Fields */}
+              {expenseForm.category === 'LABOR' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Labor Name / Mazdoor *</label>
+                    <input
+                      type="text"
+                      value={expenseForm.labor_name}
+                      onChange={(e) => updateFormField('labor_name', e.target.value)}
+                      className="input-base"
+                      placeholder="e.g., Ahmed Khan"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Daily Wage (Rs.)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={expenseForm.labor_daily_wage}
+                        onChange={(e) => updateFormField('labor_daily_wage', e.target.value)}
+                        className="input-base font-mono"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Days</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={expenseForm.labor_days}
+                        onChange={(e) => updateFormField('labor_days', e.target.value)}
+                        className="input-base font-mono"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-400 block mb-1">Workers</label>
+                      <input
+                        type="number"
+                        min={1}
+                        step="1"
+                        value={expenseForm.labor_workers}
+                        onChange={(e) => updateFormField('labor_workers', e.target.value)}
+                        className="input-base font-mono"
+                        placeholder="1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Payment Date</label>
+                    <input
+                      type="date"
+                      value={expenseForm.labor_payment_date}
+                      onChange={(e) => updateFormField('labor_payment_date', e.target.value)}
+                      className="input-base"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Date & Notes (always shown) */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Supplier Name *</label>
-                  <input
-                    type="text"
-                    value={expenseForm.supplier_name}
-                    onChange={(e) => updateFormField('supplier_name', e.target.value)}
-                    className="input-base"
-                    placeholder="e.g., Khan Builders Supply"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Date *</label>
+                  <label className="text-xs text-slate-400 block mb-1">Expense Date *</label>
                   <input
                     type="date"
                     value={expenseForm.expense_date}
@@ -600,94 +700,15 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
                     className="input-base"
                   />
                 </div>
-              </div>
-
-              {/* Material Fields */}
-              <div>
-                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                  Material Costs
-                </h4>
-                <div className="space-y-3">
-                  {MATERIAL_FIELDS.map((m) => (
-                    <div key={m.key} className="flex items-center gap-3 bg-slate-950/60 rounded-lg p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-white truncate">
-                          {m.label} <span className="text-slate-500">({m.labelUrdu})</span>
-                        </p>
-                      </div>
-                      <div className="w-24">
-                        <div className="relative">
-                          <input
-                            type="number"
-                            min={0}
-                            step="any"
-                            value={expenseForm[`${m.key}_qty` as keyof ExpenseForm] as string}
-                            onChange={(e) => updateFormField(`${m.key}_qty` as keyof ExpenseForm, e.target.value)}
-                            className="input-base font-mono text-xs pr-8"
-                            placeholder="Qty"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">
-                            {m.unit}
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-slate-600">×</span>
-                      <div className="w-28">
-                        <div className="relative">
-                          <input
-                            type="number"
-                            min={0}
-                            step="any"
-                            value={expenseForm[`${m.key}_rate` as keyof ExpenseForm] as string}
-                            onChange={(e) => updateFormField(`${m.key}_rate` as keyof ExpenseForm, e.target.value)}
-                            className="input-base font-mono text-xs pl-5"
-                            placeholder="Rate"
-                          />
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">
-                            Rs.
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-24 text-right font-mono text-xs text-amber-400">
-                        {(() => {
-                          const qty = parseFloat(expenseForm[`${m.key}_qty` as keyof ExpenseForm] as string) || 0;
-                          const rate = parseFloat(expenseForm[`${m.key}_rate` as keyof ExpenseForm] as string) || 0;
-                          return qty > 0 && rate > 0 ? fmt(qty * rate) : '—';
-                        })()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Labor & Overhead */}
-              <div>
-                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-                  Labor & Overhead Costs
-                </h4>
-                <div className="bg-slate-950/60 rounded-lg p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <p className="text-xs font-medium text-white">Labor & Overhead</p>
-                      <p className="text-[10px] text-slate-500">Mazdoor, mixin, crane, misc costs</p>
-                    </div>
-                    <div className="w-36">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={expenseForm.labor_amount}
-                          onChange={(e) => updateFormField('labor_amount', e.target.value)}
-                          className="input-base font-mono text-xs pl-5"
-                          placeholder="Amount"
-                        />
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">
-                          Rs.
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Notes</label>
+                  <input
+                    type="text"
+                    value={expenseForm.notes}
+                    onChange={(e) => updateFormField('notes', e.target.value)}
+                    className="input-base"
+                    placeholder="Optional notes"
+                  />
                 </div>
               </div>
 
@@ -719,10 +740,73 @@ export const ConstructionTracker: React.FC<ConstructionTrackerProps> = ({ curren
                   </>
                 ) : (
                   <>
-                    <Package size={14} /> Save Expenses
+                    <Package size={14} /> Save Expense
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plot Detail Modal */}
+      {showDetailModal && detailPlot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowDetailModal(false)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+              <div>
+                <h3 className="text-base font-bold text-white">{detailPlot.society_name || 'Plot'} — {detailPlot.plot_number}</h3>
+                <p className="text-xs text-slate-400">{detailPlot.block_phase} | {detailPlot.size_dimension}</p>
+              </div>
+              <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-white transition"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-center">
+                  <DollarSign size={20} className="text-emerald-400 mx-auto mb-1" />
+                  <p className="text-[10px] text-slate-400">Total Spent</p>
+                  <p className="font-bold text-emerald-400">{fmt(getPlotTotalSpent(detailPlot.id))}</p>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-center">
+                  <Package size={20} className="text-sky-400 mx-auto mb-1" />
+                  <p className="text-[10px] text-slate-400">Materials</p>
+                  <p className="font-bold text-sky-400">{(expenses[detailPlot.id] || []).filter(e => e.category !== 'LABOR').length} entries</p>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-center">
+                  <User size={20} className="text-amber-400 mx-auto mb-1" />
+                  <p className="text-[10px] text-slate-400">Labor Entries</p>
+                  <p className="font-bold text-amber-400">{(expenses[detailPlot.id] || []).filter(e => e.category === 'LABOR').length} entries</p>
+                </div>
+              </div>
+
+              {/* Expense Timeline */}
+              <div>
+                <h4 className="text-sm font-bold text-white mb-3">Expense Timeline</h4>
+                {(expenses[detailPlot.id] || []).length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">No expenses recorded yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(expenses[detailPlot.id] || []).map((exp) => (
+                      <div key={exp.id} className="flex items-center gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          exp.category === 'LABOR' ? 'bg-amber-500/20' : 'bg-sky-500/20'
+                        }`}>
+                          {exp.category === 'LABOR' ? <User size={14} className="text-amber-400" /> : <Package size={14} className="text-sky-400" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-white">{exp.material_type || exp.item_name || exp.category}</p>
+                          <p className="text-[10px] text-slate-500">{exp.supplier_name || exp.labor_name || 'N/A'} — {exp.expense_date}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xs font-bold text-emerald-400">{fmt(exp.total_amount)}</p>
+                          <p className="text-[10px] text-slate-500">Qty: {exp.quantity} × {fmt(exp.unit_price ?? exp.rate)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -6,8 +6,10 @@ node_modules/
 # Build outputs
 dist/
 dist-electron/
+dist-installer/
 out/
 release/
+release-build/
 .vercel/
 
 # Environment files

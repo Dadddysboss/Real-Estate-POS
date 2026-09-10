@@ -174,7 +174,7 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, agency_name TEXT, agent_name TEXT, phone_number TEXT, cnic TEXT, commission_type TEXT, commission_rate REAL, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS agent_commissions (id TEXT PRIMARY KEY, agent_id TEXT, transaction_id TEXT, commission_earned REAL, commission_paid REAL DEFAULT 0, balance_due REAL, status TEXT DEFAULT 'UNPAID', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, branch_id TEXT, prospect_name TEXT, phone_number TEXT, interested_category TEXT, budget_range REAL, lead_source TEXT, assigned_agent_id TEXT, pipeline_stage TEXT DEFAULT 'NEW_LEAD', priority TEXT DEFAULT 'WARM', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
-  "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, material_type TEXT NOT NULL, quantity REAL NOT NULL, unit_price REAL NOT NULL, total_amount REAL NOT NULL, supplier_name TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, category TEXT NOT NULL, material_type TEXT NOT NULL, item_name TEXT DEFAULT '', quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, rate REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, supplier_name TEXT, labor_name TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT, description TEXT, amount REAL, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS whatsapp_templates (id TEXT PRIMARY KEY, template_key TEXT UNIQUE, message_body TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -186,6 +186,9 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS land_acquisitions (id TEXT PRIMARY KEY, seller_name TEXT, seller_phone TEXT, seller_cnic TEXT, land_title_khata TEXT, total_agreed_price REAL, advance_paid REAL, debt_remaining REAL, acquisition_date TEXT, registry_doc_url TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS document_vault (id TEXT PRIMARY KEY, document_title TEXT, reference_type TEXT, reference_id TEXT, file_path_or_base64 TEXT, qr_verification_hash TEXT, expiry_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS agency_settings (id TEXT PRIMARY KEY DEFAULT 'MAIN_SETTINGS', agency_name TEXT DEFAULT 'Real Estate Enterprise', tagline TEXT, phone_primary TEXT, whatsapp_number TEXT, address TEXT, currency_symbol TEXT DEFAULT 'Rs.', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS system_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, payment_mode TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS whatsapp_logs (id TEXT PRIMARY KEY, template_id TEXT, recipient_phone TEXT, message_body TEXT, api_device_key TEXT, status TEXT DEFAULT 'PENDING', sent_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE INDEX IF NOT EXISTS idx_plots_status ON inventory_plots(status)",
   "CREATE INDEX IF NOT EXISTS idx_schedules_plan ON installment_schedules(plan_id)",
   "CREATE INDEX IF NOT EXISTS idx_digikhata_party ON digikhata_entries(party_id)",
@@ -200,6 +203,8 @@ async function initializeDatabase() {
     await tursoExecuteMulti([
       { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
+      { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_sender_phone', '')" },
+      { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_api_device_key', '')" },
     ]);
     console.log('[Desktop] Admin user upserted: dripp / 5821');
   } catch (err) {

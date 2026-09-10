@@ -139,7 +139,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT, target_capital REAL, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS investor_members (id TEXT PRIMARY KEY, pool_id TEXT, investor_name TEXT, phone TEXT, invested_amount REAL, equity_percentage REAL, total_payout_received REAL DEFAULT 0)",
       "CREATE TABLE IF NOT EXISTS construction_projects (id TEXT PRIMARY KEY, branch_id TEXT, project_name TEXT, site_location TEXT, budget_allocated REAL, total_spent REAL DEFAULT 0, status TEXT DEFAULT 'PLANNING', created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, material_type TEXT NOT NULL, quantity REAL NOT NULL, unit_price REAL NOT NULL, total_amount REAL NOT NULL, supplier_name TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, category TEXT NOT NULL, material_type TEXT NOT NULL, item_name TEXT DEFAULT '', quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, rate REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, supplier_name TEXT, labor_name TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS daily_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category_name TEXT, amount REAL, payment_source TEXT, approved_by TEXT, description TEXT, voucher_number TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS document_vault (id TEXT PRIMARY KEY, document_title TEXT, reference_type TEXT, reference_id TEXT, file_path_or_base64 TEXT, qr_verification_hash TEXT, expiry_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS audit_trail_logs (id TEXT PRIMARY KEY, user_id TEXT, user_name TEXT, action_type TEXT, module_name TEXT, entity_id TEXT, description TEXT, ip_address TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -165,6 +165,9 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS construction_material_logs (id TEXT PRIMARY KEY, project_id TEXT, material_id TEXT, quantity_used REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, batch_id TEXT, pool_id TEXT, member_id TEXT, amount_paid REAL, equity_percentage REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS digikhata_transactions (id TEXT PRIMARY KEY, party_id TEXT NOT NULL, amount REAL NOT NULL, transaction_type TEXT NOT NULL, payment_mode TEXT NOT NULL, note TEXT, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS system_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, payment_mode TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS whatsapp_logs (id TEXT PRIMARY KEY, template_id TEXT, recipient_phone TEXT, message_body TEXT, api_device_key TEXT, status TEXT DEFAULT 'PENDING', sent_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE INDEX IF NOT EXISTS idx_plots_status ON inventory_plots(status)",
       "CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(pipeline_stage)",
       "CREATE INDEX IF NOT EXISTS idx_schedules_plan ON installment_schedules(plan_id)",
@@ -179,6 +182,8 @@ async function autoSeedDatabase(): Promise<void> {
     await tursoExecuteMulti([
       { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
+      { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_sender_phone', '')" },
+      { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_api_device_key', '')" },
     ]);
     console.log('[Web] Admin user upserted: dripp / 5821');
   } catch (err) {

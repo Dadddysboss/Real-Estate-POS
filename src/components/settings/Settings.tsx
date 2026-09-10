@@ -73,8 +73,14 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
 
   const loadSettings = async () => {
     try {
+      // Ensure agency_settings row exists
+      await window.api.dbExecute(
+        `INSERT INTO agency_settings (id, agency_name, currency_symbol, created_at)
+         VALUES ('MAIN_SETTINGS', 'Dripp Real Estate & DigiKhata ERP', 'Rs.', datetime('now'))
+         ON CONFLICT(id) DO NOTHING`, []
+      );
       // Load agency settings
-      const settingsRes = await window.api.dbQuery<AgencySettings>('SELECT * FROM agency_settings WHERE id = "MAIN_SETTINGS"', []);
+      const settingsRes = await window.api.dbQuery<AgencySettings>('SELECT * FROM agency_settings WHERE id = ?', ['MAIN_SETTINGS']);
       if (settingsRes.success && settingsRes.data?.[0]) {
         const s = settingsRes.data[0];
         setAgencyName(s.agency_name);
@@ -86,16 +92,36 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
         setLogoPreview(s.logo_url_or_base64);
         setBackupFolder(s.local_backup_folder_path);
       }
-
       // Load branches
-      const branchesRes = await window.api.dbQuery<Branch>('SELECT * FROM branches WHERE status = "ACTIVE" ORDER BY branch_name', []);
+      const branchesRes = await window.api.dbQuery<Branch>('SELECT * FROM branches WHERE status = ? ORDER BY branch_name', ['ACTIVE']);
       if (branchesRes.success && branchesRes.data) {
         setBranches(branchesRes.data);
-        setSelectedBranch(branchesRes.data[0]?.id || branchId);
+        if (!selectedBranch && branchesRes.data.length > 0) {
+          setSelectedBranch(branchesRes.data[0].id);
+        }
+      }
+      // Load system settings
+      await window.api.dbExecute(
+        `INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES
+          ('session_timeout', '30'),
+          ('require_pin_on_wake', '1'),
+          ('audit_log_retention', '365'),
+          ('theme', 'dark'),
+          ('compact_mode', '0'),
+          ('animations_enabled', '1')`, []
+      );
+      const sysRes = await window.api.dbQuery<{ setting_key: string; setting_value: string }>('SELECT * FROM system_settings', []);
+      if (sysRes.success && sysRes.data) {
+        const sysMap = Object.fromEntries(sysRes.data.map((r) => [r.setting_key, r.setting_value]));
+        setSessionTimeout(Number(sysMap.session_timeout ?? 30));
+        setRequirePinOnWake(sysMap.require_pin_on_wake === '1');
+        setAuditLogRetention(Number(sysMap.audit_log_retention ?? 365));
+        setTheme((sysMap.theme ?? 'dark') as 'dark' | 'light' | 'system');
+        setCompactMode(sysMap.compact_mode === '1');
+        setAnimationsEnabled(sysMap.animations_enabled !== '0');
       }
     } catch (error) {
       console.error('Load settings error:', error);
-      setMessage({ type: 'error', text: 'Failed to load settings' });
     }
   };
 
@@ -107,11 +133,34 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
     setSaving(true);
     try {
       await window.api.dbExecute(
-        `UPDATE agency_settings SET agency_name = ?, tagline = ?, phone_primary = ?, whatsapp_number = ?, address = ?, currency_symbol = ?, logo_url_or_base64 = ?, updated_at = CURRENT_TIMESTAMP WHERE id = "MAIN_SETTINGS"`,
+        `INSERT INTO agency_settings (id, agency_name, tagline, phone_primary, whatsapp_number, address, currency_symbol, logo_url_or_base64, updated_at)
+         VALUES ('MAIN_SETTINGS', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(id) DO UPDATE SET
+           agency_name = excluded.agency_name, tagline = excluded.tagline,
+           phone_primary = excluded.phone_primary, whatsapp_number = excluded.whatsapp_number,
+           address = excluded.address, currency_symbol = excluded.currency_symbol,
+           logo_url_or_base64 = excluded.logo_url_or_base64, updated_at = datetime('now')`,
         [agencyName, tagline, phonePrimary, whatsappNumber, address, currencySymbol, logoPreview]
       );
-      setMessage({ type: 'success', text: 'General settings saved successfully' });
+      // Save system settings
+      const sysEntries: [string, string][] = [
+        ['session_timeout', String(sessionTimeout)],
+        ['require_pin_on_wake', requirePinOnWake ? '1' : '0'],
+        ['audit_log_retention', String(auditLogRetention)],
+        ['theme', theme],
+        ['compact_mode', compactMode ? '1' : '0'],
+        ['animations_enabled', animationsEnabled ? '1' : '0'],
+      ];
+      for (const [key, value] of sysEntries) {
+        await window.api.dbExecute(
+          `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES (?, ?, datetime('now'))
+           ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')`,
+          [key, value]
+        );
+      }
+      setMessage({ type: 'success', text: 'Settings saved successfully' });
     } catch (error) {
+      console.error('Save settings error:', error);
       setMessage({ type: 'error', text: 'Failed to save settings' });
     } finally {
       setSaving(false);

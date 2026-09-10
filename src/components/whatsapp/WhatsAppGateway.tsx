@@ -55,6 +55,7 @@ const WhatsAppGateway: React.FC = () => {
 
   const [senderPhone, setSenderPhone] = useState('');
   const [apiDeviceKey, setApiDeviceKey] = useState('');
+  const [configSaved, setConfigSaved] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -90,6 +91,24 @@ const WhatsAppGateway: React.FC = () => {
 
   useEffect(() => {
     fetchTemplates();
+
+    // Load saved WhatsApp sender config
+    const loadConfig = async () => {
+      const phoneRes = await window.api.dbQuery<{ setting_value: string }>(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'whatsapp_sender_phone'", []
+      );
+      if (phoneRes.success && phoneRes.data?.[0]) {
+        setSenderPhone(phoneRes.data[0].setting_value);
+        setConfigSaved(true);
+      }
+      const keyRes = await window.api.dbQuery<{ setting_value: string }>(
+        "SELECT setting_value FROM system_settings WHERE setting_key = 'whatsapp_api_device_key'", []
+      );
+      if (keyRes.success && keyRes.data?.[0]) {
+        setApiDeviceKey(keyRes.data[0].setting_value);
+      }
+    };
+    loadConfig();
   }, [fetchTemplates]);
 
   useEffect(() => {
@@ -235,6 +254,23 @@ const WhatsAppGateway: React.FC = () => {
     });
   };
 
+  const handleSaveConfig = async () => {
+    try {
+      await window.api.dbExecute(
+        "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('whatsapp_sender_phone', ?, datetime('now')) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')",
+        [senderPhone.trim()]
+      );
+      await window.api.dbExecute(
+        "INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('whatsapp_api_device_key', ?, datetime('now')) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')",
+        [apiDeviceKey.trim()]
+      );
+      setConfigSaved(true);
+      setMessage({ type: 'success', text: 'WhatsApp configuration saved' });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to save configuration' });
+    }
+  };
+
   const renderPlaceholderHighlights = (text: string) => {
     const safeText = text ?? '';
     const parts = safeText.split(/(\{\{[^}]+\}\})/g);
@@ -308,9 +344,21 @@ const WhatsAppGateway: React.FC = () => {
 
       {/* Sender Config */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-          <Smartphone size={16} className="text-green-400" /> Sender Configuration
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Smartphone size={16} className="text-green-400" /> Sender Configuration
+          </h3>
+          {configSaved && (
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 bg-green-500/10 border border-green-500/30 text-green-400 text-[10px] font-semibold rounded-full flex items-center gap-1">
+                <CheckCircle2 size={10} /> Saved & Connected
+              </span>
+              <button onClick={() => setConfigSaved(false)} className="text-xs text-slate-400 hover:text-white transition">
+                <Edit3 size={14} />
+              </button>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-slate-400 block mb-1">Sender Phone Number (your number)</label>
@@ -320,7 +368,8 @@ const WhatsAppGateway: React.FC = () => {
                 type="text"
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-green-500/50"
+                readOnly={configSaved}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-green-500/50 disabled:opacity-60"
                 placeholder="+92 300 1234567"
               />
             </div>
@@ -335,12 +384,20 @@ const WhatsAppGateway: React.FC = () => {
                 type="text"
                 value={apiDeviceKey}
                 onChange={(e) => setApiDeviceKey(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-green-500/50"
+                readOnly={configSaved}
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-green-500/50 disabled:opacity-60"
                 placeholder="Leave empty for free wa.me method"
               />
             </div>
           </div>
         </div>
+        {!configSaved && (
+          <div className="mt-3 flex justify-end">
+            <button onClick={handleSaveConfig} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl text-sm font-semibold transition">
+              <Save size={14} /> Save Configuration
+            </button>
+          </div>
+        )}
         <p className="text-[10px] text-slate-600 mt-2">
           Supported paid providers: UltraMsg (ultramsg.com), Wassenger (wassenger.com), Green API (green-api.com). Get your Device Key from their dashboard after subscribing.
         </p>
