@@ -139,7 +139,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT, target_capital REAL, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS investor_members (id TEXT PRIMARY KEY, pool_id TEXT, investor_name TEXT, phone TEXT, invested_amount REAL, equity_percentage REAL, total_payout_received REAL DEFAULT 0)",
       "CREATE TABLE IF NOT EXISTS construction_projects (id TEXT PRIMARY KEY, branch_id TEXT, project_name TEXT, site_location TEXT, budget_allocated REAL, total_spent REAL DEFAULT 0, status TEXT DEFAULT 'PLANNING', created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, category TEXT NOT NULL, material_type TEXT NOT NULL, item_name TEXT DEFAULT '', quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, rate REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, supplier_name TEXT, labor_name TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, sand_price REAL DEFAULT 0, bajri_price REAL DEFAULT 0, srya_price REAL DEFAULT 0, truck_price REAL DEFAULT 0, cement_price REAL DEFAULT 0, bricks_price REAL DEFAULT 0, labor_details TEXT, total_amount REAL NOT NULL, expense_date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS daily_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category_name TEXT, amount REAL, payment_source TEXT, approved_by TEXT, description TEXT, voucher_number TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS document_vault (id TEXT PRIMARY KEY, document_title TEXT, reference_type TEXT, reference_id TEXT, file_path_or_base64 TEXT, qr_verification_hash TEXT, expiry_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS audit_trail_logs (id TEXT PRIMARY KEY, user_id TEXT, user_name TEXT, action_type TEXT, module_name TEXT, entity_id TEXT, description TEXT, ip_address TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -181,11 +181,22 @@ async function autoSeedDatabase(): Promise<void> {
 
     // ALTER TABLE migrations for existing databases (safe to run multiple times)
     const alterMigrations = [
-      "ALTER TABLE construction_expenses ADD COLUMN category TEXT NOT NULL DEFAULT 'MATERIAL'",
+      "ALTER TABLE construction_expenses ADD COLUMN sand_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN bajri_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN srya_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN truck_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN cement_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN bricks_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN labor_details TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN notes TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN category TEXT DEFAULT 'MATERIAL'",
+      "ALTER TABLE construction_expenses ADD COLUMN material_type TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN item_name TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN quantity REAL DEFAULT 1",
+      "ALTER TABLE construction_expenses ADD COLUMN unit_price REAL DEFAULT 0",
       "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN supplier_name TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN unit TEXT DEFAULT ''",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }

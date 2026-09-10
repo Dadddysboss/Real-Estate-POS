@@ -633,7 +633,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       {!loading && activeTab === 'instant' && (
         <div className="space-y-6">
           {/* Plot Selection */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <MapPin size={18} className="text-emerald-400" /> Plot Selection
             </h3>
@@ -690,7 +690,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Buyer Info */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <User size={18} className="text-sky-400" /> Buyer Information
             </h3>
@@ -729,7 +729,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Pricing & Fees */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <CreditCard size={18} className="text-amber-400" /> Pricing & Fees
             </h3>
@@ -784,7 +784,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Split Payment */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <Wallet size={18} className="text-emerald-400" /> Split Payment
             </h3>
@@ -792,7 +792,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Notes */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <label className="text-xs text-slate-400 block mb-1">Receipt Notes</label>
             <input
               type="text"
@@ -827,7 +827,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       {!loading && activeTab === 'installment' && (
         <div className="space-y-6">
           {/* Plot Selection */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <MapPin size={18} className="text-sky-400" /> Plot Selection
             </h3>
@@ -884,7 +884,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Buyer Info */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <User size={18} className="text-sky-400" /> Buyer Information
             </h3>
@@ -923,7 +923,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Installment Details */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <CalendarDays size={18} className="text-sky-400" /> Installment Plan Details
             </h3>
@@ -1016,7 +1016,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Split Payment for Down Payment */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
               <Wallet size={18} className="text-emerald-400" /> Down Payment - Split Payment
             </h3>
@@ -1028,7 +1028,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
           </div>
 
           {/* Notes */}
-          <div className="glass-card p-6">
+          <div className="glass-card-input p-6">
             <label className="text-xs text-slate-400 block mb-1">Receipt Notes</label>
             <input
               type="text"

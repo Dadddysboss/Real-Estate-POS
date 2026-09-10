@@ -181,7 +181,7 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, agency_name TEXT, agent_name TEXT, phone_number TEXT, cnic TEXT, commission_type TEXT, commission_rate REAL, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS agent_commissions (id TEXT PRIMARY KEY, agent_id TEXT, transaction_id TEXT, commission_earned REAL, commission_paid REAL DEFAULT 0, balance_due REAL, status TEXT DEFAULT 'UNPAID', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS leads (id TEXT PRIMARY KEY, branch_id TEXT, prospect_name TEXT, phone_number TEXT, interested_category TEXT, budget_range REAL, lead_source TEXT, assigned_agent_id TEXT, pipeline_stage TEXT DEFAULT 'NEW_LEAD', priority TEXT DEFAULT 'WARM', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
-  "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, category TEXT NOT NULL, material_type TEXT NOT NULL, item_name TEXT DEFAULT '', quantity REAL DEFAULT 1, unit_price REAL DEFAULT 0, rate REAL DEFAULT 0, total_amount REAL NOT NULL DEFAULT 0, supplier_name TEXT, labor_name TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS construction_expenses (id TEXT PRIMARY KEY, plot_id TEXT NOT NULL, sand_price REAL DEFAULT 0, bajri_price REAL DEFAULT 0, srya_price REAL DEFAULT 0, truck_price REAL DEFAULT 0, cement_price REAL DEFAULT 0, bricks_price REAL DEFAULT 0, labor_details TEXT, total_amount REAL NOT NULL, expense_date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT, description TEXT, amount REAL, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT DEFAULT (datetime('now')), created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS whatsapp_templates (id TEXT PRIMARY KEY, template_key TEXT UNIQUE, message_body TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -209,11 +209,22 @@ async function initializeDatabase() {
 
     // ALTER TABLE migrations for existing databases
     const alterMigrations = [
-      "ALTER TABLE construction_expenses ADD COLUMN category TEXT NOT NULL DEFAULT 'MATERIAL'",
+      "ALTER TABLE construction_expenses ADD COLUMN sand_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN bajri_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN srya_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN truck_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN cement_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN bricks_price REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN labor_details TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN notes TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN category TEXT DEFAULT 'MATERIAL'",
+      "ALTER TABLE construction_expenses ADD COLUMN material_type TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN item_name TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN quantity REAL DEFAULT 1",
+      "ALTER TABLE construction_expenses ADD COLUMN unit_price REAL DEFAULT 0",
       "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN supplier_name TEXT DEFAULT ''",
       "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN unit TEXT DEFAULT ''",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }
