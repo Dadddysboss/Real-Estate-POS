@@ -179,6 +179,18 @@ async function autoSeedDatabase(): Promise<void> {
     await tursoExecuteMulti(tablesToEnsure.map(sql => ({ sql })));
     console.log('[Web] All tables ensured.');
 
+    // ALTER TABLE migrations for existing databases (safe to run multiple times)
+    const alterMigrations = [
+      "ALTER TABLE construction_expenses ADD COLUMN category TEXT NOT NULL DEFAULT 'MATERIAL'",
+      "ALTER TABLE construction_expenses ADD COLUMN item_name TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
+      "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
+      "ALTER TABLE construction_expenses ADD COLUMN unit TEXT DEFAULT ''",
+    ];
+    for (const migration of alterMigrations) {
+      try { await tursoExecute(migration); } catch { /* column already exists */ }
+    }
+
     await tursoExecuteMulti([
       { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
