@@ -3,6 +3,7 @@ import {
   Building2, Save, Upload, HardDrive, Database, Wifi, CheckCircle2, AlertCircle,
   Palette, Shield, Moon, Sun, Menu, X, Download as DownloadIcon, Plus
 } from 'lucide-react';
+import { notifyBackupCreated } from '../../db/unifiedAdapter';
 
 interface Branch {
   id: string;
@@ -58,6 +59,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
 
   // Backup
   const [backupFolder, setBackupFolder] = useState<string | null>(null);
+  const [sqliteDbPath, setSqliteDbPath] = useState<string>('');
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [backupInProgress, setBackupInProgress] = useState(false);
 
@@ -91,6 +93,13 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
         setCurrencySymbol(s.currency_symbol || 'Rs.');
         setLogoPreview(s.logo_url_or_base64);
         setBackupFolder(s.local_backup_folder_path);
+      }
+      // Load SQLite DB path from system_settings
+      const dbPathRes = await window.api.dbQuery<{ setting_value: string }>(
+        `SELECT setting_value FROM system_settings WHERE setting_key = 'sqlite_db_path'`, []
+      );
+      if (dbPathRes.success && dbPathRes.data?.[0]) {
+        setSqliteDbPath(dbPathRes.data[0].setting_value);
       }
       // Load branches
       const branchesRes = await window.api.dbQuery<Branch>('SELECT * FROM branches WHERE status = ? ORDER BY branch_name', ['ACTIVE']);
@@ -225,8 +234,18 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
       
       const tables = [
         'users', 'branches', 'inventory_plots', 'leads', 'sales_transactions',
-        'installment_plans', 'installment_schedules', 'digikhata_parties', 'digikhata_entries',
-        'construction_expenses', 'expenses', 'documents', 'agency_settings', 'system_settings',
+        'sale_payment_breakdowns', 'installment_plans', 'installment_schedules',
+        'installment_payments', 'digikhata_parties', 'digikhata_entries',
+        'digikhata_transactions', 'construction_expenses', 'expenses',
+        'office_expenses', 'documents', 'document_vault', 'agency_settings',
+        'system_settings', 'sync_queue', 'notifications', 'audit_trail_logs',
+        'whatsapp_logs', 'whatsapp_templates', 'tax_rules',
+        'plazas', 'plaza_units', 'site_visits', 'staff_users',
+        'investors', 'investor_pools', 'investor_members', 'investor_payouts',
+        'materials', 'material_usages', 'construction_material_stock',
+        'construction_material_logs', 'fixed_assets', 'kyc_registry',
+        'dividend_distributions', 'branch_sync_queue', 'cash_denominations',
+        'cash_counter', 'cash_sessions',
       ];
       const backup: Record<string, unknown[]> = {};
       for (const table of tables) {
@@ -249,6 +268,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
       
       setLastBackup(new Date().toISOString());
       setMessage({ type: 'success', text: `Vault backup created: ${backupFileName}` });
+      await notifyBackupCreated();
     } catch (error) {
       setMessage({ type: 'error', text: `Backup failed: ${(error as Error).message}` });
     } finally {
@@ -385,6 +405,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
           <BackupTab
             backupFolder={backupFolder}
             onBackupFolderSelect={handleBackupFolderSelect}
+            sqliteDbPath={sqliteDbPath}
             lastBackup={lastBackup}
             onCreateBackup={handleCreateBackup}
             backupInProgress={backupInProgress}
@@ -801,12 +822,14 @@ function BranchesTab({
 function BackupTab({
   backupFolder,
   onBackupFolderSelect,
+  sqliteDbPath,
   lastBackup,
   onCreateBackup,
   backupInProgress,
 }: {
   backupFolder: string | null;
   onBackupFolderSelect: () => void;
+  sqliteDbPath: string;
   lastBackup: string | null;
   onCreateBackup: () => void;
   backupInProgress: boolean;
@@ -822,6 +845,30 @@ function BackupTab({
             <h3 className="text-lg font-bold text-white">Local Backup & Sync</h3>
             <p className="text-xs text-slate-400">Configure automated backups to local hard drive</p>
           </div>
+        </div>
+      </div>
+
+      {/* Database Location */}
+      <div className="glass-card p-6">
+        <h4 className="text-sm font-bold text-slate-300 mb-4">Database Location</h4>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-xl">
+            <div className="flex items-center space-x-3">
+              <Database className="text-sky-400" size={20} />
+              <div>
+                <p className="font-medium text-white">Local SQLite Path</p>
+                <p className="text-xs text-slate-400 font-mono truncate max-w-xs">
+                  {sqliteDbPath || '%APPDATA%/dripp-erp/database.sqlite (default)'}
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full font-medium">
+              {sqliteDbPath ? 'CONFIGURED' : 'DEFAULT'}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500">
+            Desktop App stores data in a local SQLite file for offline-first access. Synced to Turso Cloud when online.
+          </p>
         </div>
       </div>
 

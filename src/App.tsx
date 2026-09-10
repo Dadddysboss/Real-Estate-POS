@@ -20,6 +20,8 @@ import { OfficeOverheads } from './components/overheads/OfficeOverheads';
 import { ConstructionTracker } from './components/construction/ConstructionTracker';
 import { InvestorPools } from './components/investors/InvestorPools';
 import { Settings } from './components/settings/Settings';
+import { NotificationCenter } from './components/notifications/NotificationCenter';
+import { getUnreadCount } from './db/unifiedAdapter';
 import InstallmentEngine from './components/installment/InstallmentEngine';
 import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, ChevronLeft, Menu, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator } from 'lucide-react';
 
@@ -59,6 +61,17 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState('dashboard');
   const [syncStatus, setSyncStatus] = useState<'online' | 'offline' | 'syncing'>('online');
   const [branchId, setBranchId] = useState('BRANCH_MAIN');
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const count = await getUnreadCount();
+      setUnreadNotifs(count);
+    }, 10000);
+    getUnreadCount().then(setUnreadNotifs);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     window.api.onSyncStatusUpdate((status: string) => {
@@ -194,9 +207,18 @@ const App: React.FC = () => {
                 <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
               </div>
 
-              {/* Quick Actions */}
-              <button className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" title="Notifications">
+              {/* Notifications */}
+              <button
+                onClick={() => setNotifOpen(true)}
+                className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                title="Notifications"
+              >
                 <Bell size={20} />
+                {unreadNotifs > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
+                    {unreadNotifs > 99 ? '99+' : unreadNotifs}
+                  </span>
+                )}
               </button>
 
               {/* Quick New Deal */}
@@ -216,6 +238,12 @@ const App: React.FC = () => {
           {renderModuleContent(activeModule)}
         </div>
       </main>
+
+      {/* Notification Center Drawer */}
+      <NotificationCenter isOpen={notifOpen} onClose={() => {
+        setNotifOpen(false);
+        getUnreadCount().then(setUnreadNotifs);
+      }} />
     </div>
   );
 

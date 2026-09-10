@@ -166,6 +166,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, batch_id TEXT, pool_id TEXT, member_id TEXT, amount_paid REAL, equity_percentage REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS digikhata_transactions (id TEXT PRIMARY KEY, party_id TEXT NOT NULL, amount REAL NOT NULL, transaction_type TEXT NOT NULL, payment_mode TEXT NOT NULL, note TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS system_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL, updated_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'INFO', is_read INTEGER DEFAULT 0, module TEXT, link TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, payment_mode TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS whatsapp_logs (id TEXT PRIMARY KEY, template_id TEXT, recipient_phone TEXT, message_body TEXT, api_device_key TEXT, status TEXT DEFAULT 'PENDING', sent_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE INDEX IF NOT EXISTS idx_plots_status ON inventory_plots(status)",

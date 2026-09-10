@@ -3,6 +3,7 @@ import {
   Wallet, Banknote, Receipt, Printer, CheckCircle2, AlertTriangle, X,
   CalendarDays, CreditCard, User, MapPin, ChevronDown, Plus, Trash2,
 } from 'lucide-react';
+import { notifyCashTransaction } from '../../db/unifiedAdapter';
 
 interface CashCounterProps {
   branchId: string;
@@ -343,6 +344,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       setReceiptText(receipt);
       setShowReceipt(true);
       setMessage({ type: 'success', text: `Sale ${saleId} recorded successfully! Plot marked as SOLD.` });
+      await notifyCashTransaction('INFLOW', totalDue, buyerName.trim());
       resetAll();
       fetchAvailablePlots();
     } catch (err) {
@@ -467,6 +469,7 @@ export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser 
       setReceiptText(receipt);
       setShowReceipt(true);
       setMessage({ type: 'success', text: `Installment plan ${planId} created! Plot marked as BOOKED.` });
+      await notifyCashTransaction('INFLOW', downPayment, buyerName.trim());
       resetAll();
       fetchAvailablePlots();
     } catch (err) {
