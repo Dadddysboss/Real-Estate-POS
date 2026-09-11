@@ -48,7 +48,9 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
       try {
         const data = await searchAuditLogs(searchTerm.trim());
         setAuditLogs(data);
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to search audit logs' });
+      }
     } else {
       await loadData();
     }

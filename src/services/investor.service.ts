@@ -285,17 +285,19 @@ export async function fetchPoolRevenueLinks(_poolId: string): Promise<{
      ORDER BY sd.created_at DESC
      LIMIT 20`, []
   );
-  const salesRevenue = salesRes.success && salesRes.data
+  if (!salesRes.success) throw new Error(salesRes.error || 'Failed to fetch sales revenue');
+  const salesRevenue = salesRes.data
     ? salesRes.data.reduce((s, r) => s + (r.total_deal_price || 0), 0)
     : 0;
-  const recentSales = salesRes.success ? (salesRes.data || []) : [];
+  const recentSales = salesRes.data || [];
 
   const cashRes: DatabaseResponse<any[]> = await window.api.dbQuery(
     `SELECT COALESCE(SUM(amount), 0) as total_inflow
      FROM cash_counter
      WHERE transaction_type = 'INFLOW'`, []
   );
-  const cashInflow = cashRes.success && cashRes.data && cashRes.data.length > 0
+  if (!cashRes.success) throw new Error(cashRes.error || 'Failed to fetch cash inflow');
+  const cashInflow = cashRes.data && cashRes.data.length > 0
     ? Number(cashRes.data[0].total_inflow) || 0
     : 0;
 
@@ -312,7 +314,8 @@ export async function fetchPoolROI(poolId: string): Promise<{
     `SELECT COALESCE(SUM(contributed_amount), 0) as total_invested
      FROM investors WHERE pool_id = ?`, [poolId]
   );
-  const totalInvested = invRes.success && invRes.data && invRes.data.length > 0
+  if (!invRes.success) throw new Error(invRes.error || 'Failed to fetch total invested');
+  const totalInvested = invRes.data && invRes.data.length > 0
     ? Number(invRes.data[0].total_invested) || 0
     : 0;
 
@@ -320,10 +323,11 @@ export async function fetchPoolROI(poolId: string): Promise<{
     `SELECT COALESCE(SUM(profit_amount), 0) as total_distributed, COUNT(*) as dist_count
      FROM dividend_distributions WHERE pool_id = ?`, [poolId]
   );
-  const totalDistributed = divRes.success && divRes.data && divRes.data.length > 0
+  if (!divRes.success) throw new Error(divRes.error || 'Failed to fetch distribution history');
+  const totalDistributed = divRes.data && divRes.data.length > 0
     ? Number(divRes.data[0].total_distributed) || 0
     : 0;
-  const distributionCount = divRes.success && divRes.data && divRes.data.length > 0
+  const distributionCount = divRes.data && divRes.data.length > 0
     ? Number(divRes.data[0].dist_count) || 0
     : 0;
 

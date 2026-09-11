@@ -127,7 +127,9 @@ export async function calculateDepreciation(assetId: string): Promise<number> {
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(
     `SELECT * FROM fixed_assets WHERE id = ? LIMIT 1`, [assetId]
   );
-  if (!res.success || !res.data || res.data.length === 0) return 0;
+  if (!res.success || !res.data || res.data.length === 0) {
+    throw new Error(res.error || `Asset ${assetId} not found`);
+  }
   
   const asset = res.data[0];
   const purchaseDate = new Date(asset.purchase_date);
@@ -160,15 +162,18 @@ export async function updateAssetBookValue(assetId: string): Promise<void> {
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(
     `SELECT * FROM fixed_assets WHERE id = ? LIMIT 1`, [assetId]
   );
-  if (!res.success || !res.data || res.data.length === 0) return;
+  if (!res.success || !res.data || res.data.length === 0) {
+    throw new Error(res.error || `Asset ${assetId} not found`);
+  }
   
   const asset = res.data[0];
   const newValue = asset.purchase_price - depreciation;
   
-  await window.api.dbExecute(
+  const updateRes = await window.api.dbExecute(
     `UPDATE fixed_assets SET current_book_value = ? WHERE id = ?`,
     [Math.round(Math.max(newValue, asset.salvage_value)), assetId]
   );
+  if (!updateRes.success) throw new Error(updateRes.error || 'Failed to update asset book value');
 }
 
 // ------------------------------------------------------------------

@@ -60,7 +60,8 @@ export async function updateBranchStatus(
   userId: string,
   userName: string
 ): Promise<void> {
-  await window.api.dbExecute(`UPDATE branches SET is_active = ? WHERE id = ?`, [isActive, branchId]);
+  const res = await window.api.dbExecute(`UPDATE branches SET is_active = ? WHERE id = ?`, [isActive, branchId]);
+  if (!res.success) throw new Error(res.error || 'Failed to update branch status');
   await queueMutation('UPDATE', 'branches', { id: branchId, is_active: isActive });
   await logAudit({
     userId, userName, actionType: 'UPDATE', moduleName: 'BRANCHES',
@@ -84,7 +85,8 @@ export async function syncDataToBranch(
       INSERT INTO branch_sync_queue (id, source_branch_id, target_branch_id, table_name, record_id, status, created_at)
       VALUES (?, ?, ?, ?, ?, 'PENDING', CURRENT_TIMESTAMP)
     `;
-    await window.api.dbExecute(syncSql, [syncId, payload.source_branch_id, payload.target_branch_id, payload.table_name, recordId]);
+    const res = await window.api.dbExecute(syncSql, [syncId, payload.source_branch_id, payload.target_branch_id, payload.table_name, recordId]);
+    if (!res.success) throw new Error(res.error || `Failed to queue sync for record ${recordId}`);
   }
   
   await logAudit({
@@ -111,7 +113,9 @@ export async function processSyncQueue(recordId: string, _sourceBranchId: string
   const recordRes: DatabaseResponse<any[]> = await window.api.dbQuery(
     `SELECT * FROM ${tableName} WHERE id = ? LIMIT 1`, [recordId]
   );
-  if (!recordRes.success || !recordRes.data || recordRes.data.length === 0) return;
+  if (!recordRes.success || !recordRes.data || recordRes.data.length === 0) {
+    throw new Error(`Record ${recordId} not found in ${tableName}`);
+  }
   
   const record = recordRes.data[0];
   const columns = Object.keys(record).filter(k => k !== 'id').join(', ');
@@ -119,12 +123,14 @@ export async function processSyncQueue(recordId: string, _sourceBranchId: string
   const values = Object.values(record).filter((_, i) => i > 0); // Skip 'id' in values
   
   const insertSql = `INSERT OR REPLACE INTO ${tableName}_temp (id, ${columns}) VALUES (${recordId}, ${placeholders})`;
-  await window.api.dbExecute(insertSql, [recordId, ...values]);
+  const insertRes = await window.api.dbExecute(insertSql, [recordId, ...values]);
+  if (!insertRes.success) throw new Error(insertRes.error || `Failed to insert into ${tableName}_temp`);
   
   // Update sync queue status
-  await window.api.dbExecute(
+  const updateRes = await window.api.dbExecute(
     `UPDATE branch_sync_queue SET status = 'COMPLETED' WHERE id = ?`, [recordId]
   );
+  if (!updateRes.success) throw new Error(updateRes.error || 'Failed to update sync queue status');
 }
 
 // ------------------------------------------------------------------

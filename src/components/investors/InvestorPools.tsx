@@ -97,7 +97,9 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       setDividends(divData);
       setPayouts(payoutData);
       setPoolROI(roiData);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load pool data' });
+    }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);

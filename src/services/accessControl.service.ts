@@ -64,7 +64,8 @@ export async function updateStaffRole(
   userId: string,
   userName: string
 ): Promise<void> {
-  await window.api.dbExecute(`UPDATE staff_users SET role = ?, is_active = ? WHERE id = ?`, [role, is_active, staffId]);
+  const res = await window.api.dbExecute(`UPDATE staff_users SET role = ?, is_active = ? WHERE id = ?`, [role, is_active, staffId]);
+  if (!res.success) throw new Error(res.error || 'Failed to update staff role');
   await queueMutation('UPDATE', 'staff_users', { id: staffId, role, is_active });
   await logAudit({
     userId, userName, actionType: 'UPDATE', moduleName: 'ACCESS_CONTROL',
@@ -74,12 +75,24 @@ export async function updateStaffRole(
 
 export async function setPinCode(staffId: string, oldPin: string | null, newPin: string, userId: string, userName: string): Promise<void> {
   if (oldPin) {
-    const valid = await bcrypt.compare(oldPin, '*dummy*'); // In production, verify against stored hash
+    // Verify old PIN against stored hash
+    const userRes: DatabaseResponse<any[]> = await window.api.dbQuery(
+      `SELECT pin_hash FROM staff_users WHERE id = ? LIMIT 1`, [staffId]
+    );
+    if (!userRes.success || !userRes.data || userRes.data.length === 0) {
+      throw new Error('Staff user not found');
+    }
+    const storedHash = userRes.data[0].pin_hash;
+    if (!storedHash) {
+      throw new Error('No existing PIN set — cannot verify old PIN');
+    }
+    const valid = await bcrypt.compare(oldPin, storedHash);
     if (!valid) throw new Error('Invalid current PIN');
   }
   
   const hashedPin = await bcrypt.hash(newPin, 10);
-  await window.api.dbExecute(`UPDATE staff_users SET pin_hash = ? WHERE id = ?`, [hashedPin, staffId]);
+  const res = await window.api.dbExecute(`UPDATE staff_users SET pin_hash = ? WHERE id = ?`, [hashedPin, staffId]);
+  if (!res.success) throw new Error(res.error || 'Failed to set PIN');
   await queueMutation('UPDATE', 'staff_users', { id: staffId, has_pin: true });
   await logAudit({
     userId, userName, actionType: 'UPDATE', moduleName: 'ACCESS_CONTROL',

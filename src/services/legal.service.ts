@@ -58,7 +58,8 @@ export async function addKYCEntry(
 }
 
 export async function verifyKYC(kycId: string, userId: string, userName: string): Promise<void> {
-  await window.api.dbExecute(`UPDATE kyc_registry SET verified = 1 WHERE id = ?`, [kycId]);
+  const res = await window.api.dbExecute(`UPDATE kyc_registry SET verified = 1 WHERE id = ?`, [kycId]);
+  if (!res.success) throw new Error(res.error || 'Failed to verify KYC');
   await queueMutation('UPDATE', 'kyc_registry', { id: kycId, verified: true });
   await logAudit({
     userId, userName, actionType: 'UPDATE', moduleName: 'LEGAL',
@@ -67,7 +68,8 @@ export async function verifyKYC(kycId: string, userId: string, userName: string)
 }
 
 export async function deleteKYC(kycId: string, userId: string, userName: string, ref: string): Promise<void> {
-  await window.api.dbExecute(`DELETE FROM kyc_registry WHERE id = ?`, [kycId]);
+  const res = await window.api.dbExecute(`DELETE FROM kyc_registry WHERE id = ?`, [kycId]);
+  if (!res.success) throw new Error(res.error || 'Failed to delete KYC');
   await queueMutation('DELETE', 'kyc_registry', { id: kycId });
   await logAudit({
     userId, userName, actionType: 'DELETE', moduleName: 'LEGAL',
@@ -111,7 +113,8 @@ export async function addDocument(
 }
 
 export async function deleteDocument(docId: string, userId: string, userName: string, ref: string): Promise<void> {
-  await window.api.dbExecute(`DELETE FROM documents WHERE id = ?`, [docId]);
+  const res = await window.api.dbExecute(`DELETE FROM documents WHERE id = ?`, [docId]);
+  if (!res.success) throw new Error(res.error || 'Failed to delete document');
   await queueMutation('DELETE', 'documents', { id: docId });
   await logAudit({
     userId, userName, actionType: 'DELETE', moduleName: 'LEGAL',

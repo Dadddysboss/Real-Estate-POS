@@ -47,8 +47,10 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       const [expData, assetData] = await Promise.all([fetchExpenses(), fetchAssets()]);
       setExpenses(expData);
       setAssets(assetData);
-      // Update book values
-      assetData.forEach((a) => updateAssetBookValue(a.id));
+      // Update book values (non-blocking, individual failures won't break load)
+      for (const a of assetData) {
+        try { await updateAssetBookValue(a.id); } catch { /* best-effort depreciation update */ }
+      }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to load' });
     }
