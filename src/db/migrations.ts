@@ -388,6 +388,7 @@ CREATE TABLE IF NOT EXISTS investor_pools (
     id TEXT PRIMARY KEY,
     branch_id TEXT,
     pool_name TEXT NOT NULL,
+    project_type TEXT DEFAULT 'LAND' CHECK (project_type IN ('LAND', 'PLAZA', 'SOCIETY', 'MIXED')),
     total_target_capital REAL NOT NULL DEFAULT 0,
     raised_capital REAL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('OPEN', 'ACTIVE', 'CLOSED', 'COMPLETED', 'LIQUIDATED')),

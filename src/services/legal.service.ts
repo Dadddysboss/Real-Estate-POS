@@ -58,7 +58,7 @@ export async function addKYCEntry(
 }
 
 export async function verifyKYC(kycId: string, userId: string, userName: string): Promise<void> {
-  await window.api.dbExecute(`UPDATE kyc_registry SET verified = TRUE WHERE id = ?`, [kycId]);
+  await window.api.dbExecute(`UPDATE kyc_registry SET verified = 1 WHERE id = ?`, [kycId]);
   await queueMutation('UPDATE', 'kyc_registry', { id: kycId, verified: true });
   await logAudit({
     userId, userName, actionType: 'UPDATE', moduleName: 'LEGAL',

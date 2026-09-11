@@ -82,10 +82,14 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
   const data = await response.json();
   const result = data.results?.[0];
   if (!result || !result.response) {
+    console.log('[Turso] Empty result for:', sql.substring(0, 60), JSON.stringify(data).substring(0, 200));
     return { rows: [] };
   }
   if (result.response.type === 'error') {
     throw new Error(result.response.message || 'Turso execution error');
+  }
+  if (sql.toUpperCase().includes('INVESTOR_POOLS')) {
+    console.log('[Turso] investor_pools response type:', result.response.type, 'result keys:', Object.keys(result.response.result || {}));
   }
   const cols: string[] = (result.response.result?.cols || []).map((c: { name: string }) => c.name);
   const rawRows: unknown[][] = result.response.result?.rows || [];
@@ -332,6 +336,7 @@ app.whenReady().then(async () => {
     ipcMain.handle('db:execute', async (_event, { sql, args }) => {
       try {
         const result = await tursoExecute(sql, args || []);
+        console.log(`[Desktop DB Execute] sql=${sql.substring(0, 80)} rows_affected=${JSON.stringify(result)}`);
         return { success: true, data: result };
       } catch (err) {
         console.error('[Desktop DB Execute Error]', err);
@@ -342,6 +347,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('db:query', async (_event, { sql, args }) => {
     try {
       const result = await tursoExecute(sql, args || []);
+      console.log(`[Desktop DB Query] sql=${sql.substring(0, 80)} rows=${result.rows.length}`);
+      if (result.rows.length === 0 && sql.toUpperCase().includes('INVESTOR_POOLS')) {
+        console.log('[Desktop DB Query] WARN: investor_pools query returned 0 rows');
+      }
       return { success: true, data: result.rows };
     } catch (err) {
       console.error('[Desktop DB Query Error]', err);

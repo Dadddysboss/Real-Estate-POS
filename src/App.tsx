@@ -32,6 +32,36 @@ interface User {
   role: string;
 }
 
+// ─── RBAC: Role-Based Access Control ───────────────────────────────
+type ModuleKey = string;
+
+const ROLE_MODULES: Record<string, ModuleKey[]> = {
+  ADMIN: [
+    'dashboard', 'inventory', 'plazas', 'acquisition', 'cash-counter', 'crm',
+    'sales', 'installments', 'digikhata', 'agents', 'investors', 'construction',
+    'expenses', 'documents', 'audit', 'branches', 'whatsapp', 'tax', 'settings',
+  ],
+  MANAGER: [
+    'dashboard', 'inventory', 'sales', 'construction', 'cash-counter',
+    'digikhata', 'expenses', 'documents',
+  ],
+  SALES: [
+    'dashboard', 'cash-counter', 'sales',
+  ],
+  ACCOUNTANT: [
+    'dashboard', 'digikhata', 'expenses', 'tax', 'installments',
+  ],
+  VIEWER: [
+    'dashboard', 'inventory', 'sales', 'cash-counter', 'digikhata',
+    'expenses', 'documents', 'investors', 'construction',
+  ],
+};
+
+function hasModuleAccess(role: string, moduleKey: string): boolean {
+  const allowed = ROLE_MODULES[role] || ROLE_MODULES.VIEWER;
+  return allowed.includes(moduleKey);
+}
+
 const navigation = [
   { name: 'Dashboard', icon: LayoutDashboard, href: '#dashboard' },
   { name: 'Inventory', icon: Warehouse, href: '#inventory' },
@@ -88,6 +118,22 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setUser(null);
+    setActiveModule('dashboard');
+  };
+
+  // Filter navigation by role
+  const filteredNavigation = navigation.filter((item) => {
+    const moduleKey = item.href.replace('#', '');
+    return user ? hasModuleAccess(user.role, moduleKey) : false;
+  });
+
+  // Route guard: redirect to dashboard if module not allowed
+  const safeSetActiveModule = (mod: string) => {
+    if (user && hasModuleAccess(user.role, mod)) {
+      setActiveModule(mod);
+    } else {
+      setActiveModule('dashboard');
+    }
   };
 
   if (!isAuthenticated || !user) {
@@ -111,12 +157,12 @@ const App: React.FC = () => {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          {navigation.map((item) => {
+          {filteredNavigation.map((item) => {
             const isActive = activeModule === item.href.replace('#', '');
             return (
               <button
                 key={item.name}
-                onClick={() => setActiveModule(item.href.replace('#', ''))}
+                onClick={() => safeSetActiveModule(item.href.replace('#', ''))}
                 className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
                   isActive
                     ? 'bg-emerald-500/10 border border-emerald-500/40 text-white'
@@ -205,7 +251,7 @@ const App: React.FC = () => {
 
             {/* Quick New Deal */}
             <button
-              onClick={() => setActiveModule('cash-counter')}
+              onClick={() => safeSetActiveModule('cash-counter')}
               className="hidden sm:flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-semibold text-sm transition-all shadow-md shadow-emerald-950/40"
             >
               <Plus size={16} />
@@ -230,6 +276,10 @@ const App: React.FC = () => {
 
   function renderModuleContent(module: string) {
     const wrap = (el: React.ReactNode) => <ErrorBoundary module={module}>{el}</ErrorBoundary>;
+    // Route guard: deny access to unauthorized modules
+    if (!user || !hasModuleAccess(user.role, module)) {
+      return wrap(<Dashboard branchId={branchId} />);
+    }
     switch (module) {
       case 'dashboard':
         return wrap(<Dashboard branchId={branchId} onNavigate={setActiveModule} />);

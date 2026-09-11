@@ -24,7 +24,7 @@ export interface LoginPayload {
 // ------------------------------------------------------------------
 
 export async function fetchStaff(): Promise<any[]> {
-  const sql = `SELECT id, username, full_name, role, branch_id, is_active, pin_code IS NOT NULL as has_pin FROM staff_users ORDER BY created_at DESC`;
+  const sql = `SELECT id, username, full_name, role, branch_id, is_active, pin_hash IS NOT NULL as has_pin FROM staff_users ORDER BY created_at DESC`;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch staff');
   return res.data;
@@ -123,7 +123,7 @@ export async function fetchAuditLogs(limit = 100): Promise<any[]> {
 
 export async function searchAuditLogs(searchTerm: string, limit = 100): Promise<any[]> {
   const sql = `SELECT * FROM audit_trail_logs 
-    WHERE entity_description LIKE ? OR action_type LIKE ? OR module_name LIKE ?
+    WHERE description LIKE ? OR action_type LIKE ? OR module_name LIKE ?
     ORDER BY created_at DESC LIMIT ?`;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, [`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`, String(limit)]);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to search audit logs');
