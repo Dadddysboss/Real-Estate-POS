@@ -3,15 +3,16 @@
   "productName": "Dripp Real Estate & DigiKhata ERP",
   "copyright": "Copyright © 2026 Dripp Real Estate Enterprise",
   "directories": {
-    "output": "dist-installer",
+    "output": "dist-release",
     "buildResources": "build"
   },
   "files": [
-    "dist/**/*",
+    "dist-fresh/**/*",
     "dist-electron/**/*",
     "package.json"
   ],
   "win": {
+    "icon": "build/icon.png",
     "target": [
       {
         "target": "nsis",
@@ -23,6 +24,8 @@
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
-    "createStartMenuShortcut": true
+    "createStartMenuShortcut": true,
+    "installerIcon": "build/icon.png",
+    "uninstallerIcon": "build/icon.png"
   }
 }

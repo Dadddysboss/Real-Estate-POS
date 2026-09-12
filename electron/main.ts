@@ -137,12 +137,16 @@ let printWindow: BrowserWindow | null = null;
 function createWindow() {
   logToFile(`[Desktop] createWindow called. isPackaged=${app.isPackaged}, __dirname=${__dirname}`);
 
+  const iconPath = path.join(__dirname, '../build/icon.png');
+  logToFile(`[Desktop] App icon path: ${iconPath}, exists: ${fs.existsSync(iconPath)}`);
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 768,
     minWidth: 1024,
     minHeight: 600,
     title: 'Dripp Real Estate & DigiKhata ERP',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
