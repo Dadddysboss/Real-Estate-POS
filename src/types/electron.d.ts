@@ -11,6 +11,10 @@ declare global {
       getCashSessions: (branchId: string) => Promise<DatabaseResponse<CashSessionData[]>>;
       openCashSession: (branchId: string, openingBalance: number, userId: string, userName: string) => Promise<DatabaseResponse<{ id: string }>>;
       closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string) => Promise<DatabaseResponse<{ id: string }>>;
+      checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
+      installUpdate: () => Promise<{ success: boolean; error?: string }>;
+      onUpdateStatus: (callback: (status: string, info?: string) => void) => void;
+      onUpdateProgress: (callback: (percent: number) => void) => void;
     };
   }
 }
@@ -32,8 +36,13 @@ export interface Branch {
   branch_code: string;
   city: string;
   address: string | null;
-  manager_id: string | null;
+  phone_number: string | null;
+  email: string | null;
+  manager_name: string | null;
+  is_active: number;
   status: string;
+  total_plots?: number;
+  total_revenue?: number;
   created_at: string;
 }
 

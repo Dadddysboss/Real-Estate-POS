@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Building2, Save, Upload, HardDrive, Database, Wifi, CheckCircle2, AlertCircle,
-  Palette, Shield, Moon, Sun, Menu, X, Download as DownloadIcon, Plus
+  Palette, Shield, Moon, Sun, Menu, X, Download as DownloadIcon, Plus, RefreshCw, ExternalLink
 } from 'lucide-react';
 import { notifyBackupCreated } from '../../db/unifiedAdapter';
 
@@ -73,6 +73,12 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
   const [compactMode, setCompactMode] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
 
+  // Auto-Update
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error'>('idle');
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
   const loadSettings = async () => {
     try {
       // Ensure agency_settings row exists
@@ -143,7 +149,53 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
 
   useEffect(() => {
     loadSettings();
+    // Listen for auto-update events (Electron only)
+    if (window.api?.onUpdateStatus) {
+      window.api.onUpdateStatus((status: string, info?: string) => {
+        switch (status) {
+          case 'checking': setUpdateStatus('checking'); break;
+          case 'available': setUpdateStatus('available'); setUpdateVersion(info || null); break;
+          case 'up-to-date': setUpdateStatus('up-to-date'); break;
+          case 'downloaded': setUpdateStatus('downloaded'); break;
+          case 'error': setUpdateStatus('error'); setUpdateError(info || 'Unknown error'); break;
+        }
+      });
+    }
+    if (window.api?.onUpdateProgress) {
+      window.api.onUpdateProgress((percent: number) => {
+        setUpdateProgress(percent);
+        setUpdateStatus('downloading');
+      });
+    }
   }, []);
+
+  const handleCheckForUpdate = async () => {
+    if (!window.api?.checkForUpdates) {
+      setMessage({ type: 'error', text: 'Auto-update is only available in the desktop app.' });
+      return;
+    }
+    setUpdateStatus('checking');
+    setUpdateError(null);
+    try {
+      const result = await window.api.checkForUpdates();
+      if (!result.success) {
+        setUpdateStatus('error');
+        setUpdateError(result.error || 'Failed to check for updates');
+      }
+    } catch (err) {
+      setUpdateStatus('error');
+      setUpdateError(err instanceof Error ? err.message : 'Failed to check for updates');
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!window.api?.installUpdate) return;
+    try {
+      await window.api.installUpdate();
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to install update');
+    }
+  };
 
   const handleSaveGeneral = async () => {
     setSaving(true);
@@ -409,6 +461,12 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
             lastBackup={lastBackup}
             onCreateBackup={handleCreateBackup}
             backupInProgress={backupInProgress}
+            updateStatus={updateStatus}
+            updateVersion={updateVersion}
+            updateProgress={updateProgress}
+            updateError={updateError}
+            onCheckForUpdate={handleCheckForUpdate}
+            onInstallUpdate={handleInstallUpdate}
           />
         )}
 
@@ -826,6 +884,12 @@ function BackupTab({
   lastBackup,
   onCreateBackup,
   backupInProgress,
+  updateStatus,
+  updateVersion,
+  updateProgress,
+  updateError,
+  onCheckForUpdate,
+  onInstallUpdate,
 }: {
   backupFolder: string | null;
   onBackupFolderSelect: () => void;
@@ -833,6 +897,12 @@ function BackupTab({
   lastBackup: string | null;
   onCreateBackup: () => void;
   backupInProgress: boolean;
+  updateStatus: string;
+  updateVersion: string | null;
+  updateProgress: number;
+  updateError: string | null;
+  onCheckForUpdate: () => void;
+  onInstallUpdate: () => void;
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
@@ -939,6 +1009,97 @@ function BackupTab({
             <HardDrive className="text-amber-400 mx-auto mb-2" size={24} />
             <p className="text-xs text-slate-400">Local Vault</p>
             <p className="font-bold text-amber-400">Ready</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Update Software */}
+      <div className="glass-card p-6">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-sky-500/10 text-sky-400 rounded-xl">
+              <RefreshCw size={22} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">Software Updates</h3>
+              <p className="text-xs text-slate-400">Check and install the latest version from GitHub Releases</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          {/* Status display */}
+          {updateStatus === 'checking' && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-sm">
+              <RefreshCw size={16} className="animate-spin" />
+              <span>Checking for updates...</span>
+            </div>
+          )}
+          {updateStatus === 'available' && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <CheckCircle2 size={16} />
+              <span>Update available: v{updateVersion}</span>
+            </div>
+          )}
+          {updateStatus === 'up-to-date' && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <CheckCircle2 size={16} />
+              <span>You're running the latest version!</span>
+            </div>
+          )}
+          {updateStatus === 'downloading' && (
+            <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <RefreshCw size={16} className="animate-spin" />
+                <span>Downloading update... {Math.round(updateProgress)}%</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2">
+                <div className="bg-sky-500 h-2 rounded-full transition-all" style={{ width: `${updateProgress}%` }} />
+              </div>
+            </div>
+          )}
+          {updateStatus === 'downloaded' && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+              <CheckCircle2 size={16} />
+              <span>Update downloaded! Restart to apply.</span>
+            </div>
+          )}
+          {updateStatus === 'error' && (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
+              <AlertCircle size={16} />
+              <span>{updateError || 'Update check failed'}</span>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3">
+            {updateStatus !== 'downloaded' ? (
+              <button
+                onClick={onCheckForUpdate}
+                disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                className="flex items-center space-x-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-xl text-sm transition-all disabled:opacity-50"
+              >
+                <RefreshCw size={16} className={updateStatus === 'checking' ? 'animate-spin' : ''} />
+                <span>{updateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}</span>
+              </button>
+            ) : (
+              <button
+                onClick={onInstallUpdate}
+                className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-sm transition-all"
+              >
+                <DownloadIcon size={16} />
+                <span>Restart & Install Update</span>
+              </button>
+            )}
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center space-x-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-sm transition-all"
+            >
+              <ExternalLink size={14} />
+              <span>View Releases</span>
+            </a>
           </div>
         </div>
       </div>

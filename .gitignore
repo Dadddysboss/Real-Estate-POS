@@ -6,11 +6,16 @@ node_modules/
 # Build outputs
 dist/
 dist-electron/
+dist-fresh/
+dist-release/
 dist-installer/
 out/
 release/
 release-build/
 .vercel/
+
+# Generated icons
+build/icon.ico
 
 # Environment files
 .env
@@ -40,5 +45,8 @@ coverage/
 # Misc
 *.tgz
 *.tar.gz
+
+# Local config with secrets
+opencode.json
 
 .vercel

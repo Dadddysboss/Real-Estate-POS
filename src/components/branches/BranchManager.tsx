@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, X } from 'lucide-react';
+import { Building2, Plus, X, MapPin, Phone, Mail, User, ChevronRight } from 'lucide-react';
 import { fetchBranches, createBranch, updateBranchStatus, generateBranchCode } from '../../services/branch.service';
 
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
@@ -8,12 +8,11 @@ interface BranchManagerProps {
   currentUser: CurrentUser;
 }
 
-const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
-
 export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => {
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [branchName, setBranchName] = useState('');
@@ -102,32 +101,41 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
         <div className="glass-card p-4">
+          <p className="text-[10px] uppercase text-slate-500">Total Branches</p>
+          <p className="text-lg font-bold text-white mt-1">{branches.length}</p>
+        </div>
+        <div className="glass-card p-4">
           <p className="text-[10px] uppercase text-slate-500">Active Branches</p>
-          <p className="text-lg font-bold text-white mt-1">{branches.filter(b => b.is_active).length}</p>
+          <p className="text-lg font-bold text-sky-400 mt-1 font-mono">{branches.filter(b => b.is_active).length}</p>
         </div>
         <div className="glass-card p-4">
-          <p className="text-[10px] uppercase text-slate-500">Total Plots</p>
-          <p className="text-lg font-bold text-sky-400 mt-1 font-mono">{fmtNum(branches.reduce((s, b) => s + b.total_plots, 0))}</p>
-        </div>
-        <div className="glass-card p-4">
-          <p className="text-[10px] uppercase text-slate-500">Total Revenue</p>
-          <p className="text-lg font-bold text-emerald-400 mt-1 font-mono">{fmt(branches.reduce((s, b) => s + b.total_revenue, 0))}</p>
+          <p className="text-[10px] uppercase text-slate-500">Inactive Branches</p>
+          <p className="text-lg font-bold text-emerald-400 mt-1 font-mono">{branches.filter(b => !b.is_active).length}</p>
         </div>
       </div>
 
       {/* Branch List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {branches.map((branch) => (
-          <div key={branch.id} className="glass-card glass-card-hover p-5">
+          <div key={branch.id}
+            role="button"
+            tabIndex={0}
+            className="glass-card glass-card-hover p-5 cursor-pointer hover:ring-2 hover:ring-purple-500/30 transition-all"
+            onClick={() => setSelectedBranch(branch)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedBranch(branch); } }}
+          >
             <div className="flex items-start justify-between mb-3">
               <div className="w-12 h-12 bg-purple-500/20 rounded-xl flex items-center justify-center">
                 <Building2 size={20} className="text-purple-400" />
               </div>
-              <label className="inline-flex items-center cursor-pointer">
-                <input type="checkbox" checked={branch.is_active} onChange={() => handleToggleStatus(branch.id)}
-                  className="sr-only peer" />
-                <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex items-center cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={branch.is_active} onChange={() => handleToggleStatus(branch.id)}
+                    className="sr-only peer" />
+                  <div className="w-10 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+                <ChevronRight size={16} className="text-purple-400" />
+              </div>
             </div>
             <h3 className="font-bold text-white">{branch.branch_name}</h3>
             <p className="text-xs text-slate-500 mt-1">Code: {branch.branch_code}</p>
@@ -135,12 +143,12 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
             <p className="text-xs text-slate-400">{branch.address}</p>
             <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-2">
               <div className="text-center">
-                <p className="text-[10px] text-slate-500">Plots</p>
-                <p className="text-sm font-bold text-sky-400">{fmtNum(branch.total_plots)}</p>
+                <p className="text-[10px] text-slate-500">Phone</p>
+                <p className="text-sm font-bold text-sky-400">{branch.phone_number || '—'}</p>
               </div>
               <div className="text-center">
-                <p className="text-[10px] text-slate-500">Revenue</p>
-                <p className="text-sm font-bold text-emerald-400">{fmtNum(branch.total_revenue)}</p>
+                <p className="text-[10px] text-slate-500">Status</p>
+                <p className={`text-sm font-bold ${branch.is_active ? 'text-emerald-400' : 'text-rose-400'}`}>{branch.is_active ? 'Active' : 'Inactive'}</p>
               </div>
             </div>
           </div>
@@ -183,9 +191,70 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
           </div>
         </div>
       )}
+      {/* Branch Detail Modal */}
+      {selectedBranch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay" onClick={() => setSelectedBranch(null)}>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center">
+                  <Building2 size={20} className="text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{selectedBranch.branch_name}</h3>
+                  <p className="text-xs text-slate-400">Code: {selectedBranch.branch_code}</p>
+                </div>
+              </div>
+              <button onClick={() => setSelectedBranch(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-2 text-sm text-slate-300">
+                  <User size={14} className="text-slate-500" />
+                  <span>{selectedBranch.manager_name || 'No manager'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-300">
+                  <Phone size={14} className="text-slate-500" />
+                  <span>{selectedBranch.phone_number || 'No phone'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-300 col-span-2">
+                  <MapPin size={14} className="text-slate-500" />
+                  <span>{selectedBranch.address || 'No address'}</span>
+                </div>
+                {selectedBranch.email && (
+                  <div className="flex items-center gap-2 text-sm text-slate-300 col-span-2">
+                    <Mail size={14} className="text-slate-500" />
+                    <span>{selectedBranch.email}</span>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-950/60 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-500 uppercase">Status</p>
+                  <p className={`text-sm font-bold mt-1 ${selectedBranch.is_active ? 'text-emerald-400' : 'text-rose-400'}`}>{selectedBranch.is_active ? 'Active' : 'Inactive'}</p>
+                </div>
+                <div className="bg-slate-950/60 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-500 uppercase">Total Plots</p>
+                  <p className="text-sm font-bold text-sky-400 mt-1">{selectedBranch.total_plots ?? 0}</p>
+                </div>
+                <div className="bg-slate-950/60 rounded-xl p-3 text-center">
+                  <p className="text-[10px] text-slate-500 uppercase">Revenue</p>
+                  <p className="text-sm font-bold text-emerald-400 mt-1">Rs. {Math.round(selectedBranch.total_revenue ?? 0).toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-800">
+              <button onClick={() => setSelectedBranch(null)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Close</button>
+              <button onClick={() => { handleToggleStatus(selectedBranch.id); setSelectedBranch(null); }}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold ${selectedBranch.is_active ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+                {selectedBranch.is_active ? 'Deactivate' : 'Activate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const fmtNum = (n: number) => Math.round(n).toLocaleString('en-PK');
 export default BranchManager;

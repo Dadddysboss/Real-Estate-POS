@@ -7,15 +7,25 @@
     "buildResources": "build"
   },
   "files": [
-    "dist-fresh/**/*",
+    "dist/**/*",
     "dist-electron/**/*",
     "package.json"
   ],
+  "publish": {
+    "provider": "github",
+    "owner": "huzaifabutt09",
+    "repo": "Real-Estate-POS",
+    "releaseType": "release"
+  },
   "win": {
-    "icon": "build/icon.png",
+    "icon": "build/icon.ico",
     "target": [
       {
         "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
         "arch": ["x64"]
       }
     ]
@@ -25,7 +35,7 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "installerIcon": "build/icon.png",
-    "uninstallerIcon": "build/icon.png"
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico"
   }
 }

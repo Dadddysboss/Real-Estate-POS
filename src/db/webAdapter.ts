@@ -1,4 +1,5 @@
 import { sanitizeParamsForTurso, sanitizeRowsFromDB, safeStr } from './dbSanitizer';
+import bcrypt from 'bcryptjs';
 
 interface DatabaseResponse<T = unknown> {
   success: boolean;
@@ -31,9 +32,12 @@ interface WebApi {
   closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string) => Promise<DatabaseResponse>;
 }
 
-const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io';
+const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || '';
+const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || '';
 
-const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
+if (!TURSO_DB_URL || !TURSO_AUTH_TOKEN) {
+  console.error('[Web] CRITICAL: VITE_TURSO_DATABASE_URL or VITE_TURSO_AUTH_TOKEN not set. Configure .env file.');
+}
 
 async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
   const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
@@ -62,13 +66,18 @@ async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]):
   const data = await response.json();
   const results = data.results || [];
   const lastResult = results[results.length - 1];
-  if (!lastResult || !lastResult.response) {
+  if (!lastResult) {
     throw new Error('Empty response from Turso');
   }
-  if (lastResult.response.type === 'error') {
-    throw new Error(lastResult.response.message || 'Turso execution error');
+  if (lastResult.type === 'error') {
+    const errMsg = lastResult.error?.message || 'Turso execution error';
+    console.error('[Turso Multi Error]', errMsg, lastResult.error);
+    throw new Error(errMsg);
   }
-  return { rows: sanitizeRowsFromDB(lastResult.response.result?.rows || []) };
+  if (!lastResult.response) {
+    throw new Error('Missing response in Turso result');
+  }
+  return { rows: lastResult.response.result?.rows || [] };
 }
 
 async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
@@ -97,11 +106,18 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
 
   const data = await response.json();
   const result = data.results?.[0];
-  if (!result || !result.response) {
+  if (!result) {
+    console.error('[Turso] No results in response for:', sql.substring(0, 80));
     return { rows: [] };
   }
-  if (result.response.type === 'error') {
-    throw new Error(result.response.message || 'Turso execution error');
+  if (result.type === 'error') {
+    const errMsg = result.error?.message || 'Turso execution error';
+    console.error('[Turso Error]', errMsg, 'sql:', sql.substring(0, 80));
+    throw new Error(errMsg);
+  }
+  if (!result.response) {
+    console.error('[Turso] Missing response in result for:', sql.substring(0, 80));
+    return { rows: [] };
   }
   const cols: string[] = (result.response.result?.cols || []).map((c: { name: string }) => c.name);
   const rawRows: unknown[][] = result.response.result?.rows || [];
@@ -121,7 +137,7 @@ async function autoSeedDatabase(): Promise<void> {
   try {
     const tablesToEnsure = [
       "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'STAFF', status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, address TEXT, phone_number TEXT, email TEXT, manager_name TEXT, is_active INTEGER DEFAULT 1, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS cash_sessions (id TEXT PRIMARY KEY, branch_id TEXT, opened_by TEXT, opening_balance REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', opened_at TEXT, closed_by TEXT, closing_balance REAL, expected_balance REAL, variance REAL, closed_at TEXT)",
       "CREATE TABLE IF NOT EXISTS cash_counter (id TEXT PRIMARY KEY, branch_id TEXT, user_id TEXT, transaction_type TEXT, category TEXT, amount REAL, notes TEXT, handed_over_by TEXT, received_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS inventory_plots (id TEXT PRIMARY KEY, branch_id TEXT, plot_number TEXT, society_name TEXT, block_phase TEXT, size_dimension TEXT, size_value REAL DEFAULT 0, size_unit TEXT DEFAULT 'Marla', category TEXT, feature_tags TEXT, purchase_date TEXT, purchase_price REAL, target_asking_price REAL, floor_price REAL, gps_coordinates TEXT, status TEXT DEFAULT 'AVAILABLE', construction_status TEXT DEFAULT 'NONE', notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
@@ -161,7 +177,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS fixed_assets (id TEXT PRIMARY KEY, branch_id TEXT, asset_name TEXT NOT NULL, asset_type TEXT, category TEXT, purchase_price REAL DEFAULT 0, purchase_date TEXT, useful_life_years INTEGER DEFAULT 5, salvage_value REAL DEFAULT 0, depreciation_method TEXT DEFAULT 'STRAIGHT_LINE', annual_depreciation REAL DEFAULT 0, current_book_value REAL DEFAULT 0, depreciation_rate REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS kyc_registry (id TEXT PRIMARY KEY, party_type TEXT, party_id TEXT, person_type TEXT, full_name TEXT, cnic TEXT, cnic_number TEXT, phone_number TEXT, address TEXT, email TEXT, verified INTEGER DEFAULT 0, cnic_expiry TEXT, address_proof TEXT, photo_url TEXT, status TEXT DEFAULT 'PENDING', verified_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, title TEXT, doc_type TEXT, document_type TEXT, description TEXT, reference_type TEXT, reference_id TEXT, related_person_id TEXT, related_plot_id TEXT, expiry_date TEXT, file_path TEXT, file_base64 TEXT, uploaded_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS branch_sync_queue (id TEXT PRIMARY KEY, branch_id TEXT, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS branch_sync_queue (id TEXT PRIMARY KEY, branch_id TEXT, source_branch_id TEXT, target_branch_id TEXT, action_type TEXT, table_name TEXT, record_id TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS cash_denominations (id TEXT PRIMARY KEY, cash_counter_id TEXT, notes_5000 INTEGER DEFAULT 0, notes_1000 INTEGER DEFAULT 0, notes_500 INTEGER DEFAULT 0, notes_100 INTEGER DEFAULT 0, notes_50 INTEGER DEFAULT 0, notes_20 INTEGER DEFAULT 0, notes_10 INTEGER DEFAULT 0, total_calculated REAL, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS construction_material_stock (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL, min_stock_alert REAL, unit_cost REAL)",
       "CREATE TABLE IF NOT EXISTS construction_material_logs (id TEXT PRIMARY KEY, project_id TEXT, material_id TEXT, quantity_used REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -233,6 +249,17 @@ async function autoSeedDatabase(): Promise<void> {
       // Staff users — align with service schema
       "ALTER TABLE staff_users ADD COLUMN password_hash TEXT",
       "ALTER TABLE staff_users ADD COLUMN pin_hash TEXT",
+      // Branches — align with service/UI schema (address, phone, email, manager, is_active)
+      "ALTER TABLE branches ADD COLUMN address TEXT",
+      "ALTER TABLE branches ADD COLUMN phone_number TEXT",
+      "ALTER TABLE branches ADD COLUMN email TEXT",
+      "ALTER TABLE branches ADD COLUMN manager_name TEXT",
+      "ALTER TABLE branches ADD COLUMN is_active INTEGER DEFAULT 1",
+      // Branch sync queue — align with service schema
+      "ALTER TABLE branch_sync_queue ADD COLUMN source_branch_id TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN target_branch_id TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN table_name TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN record_id TEXT",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }
@@ -263,7 +290,7 @@ async function autoSeedDatabase(): Promise<void> {
     }
 
     await tursoExecuteMulti([
-      { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
+      { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, address, phone_number, email, manager_name, is_active, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', '', '', '', '', 1, 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
       { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_sender_phone', '')" },
       { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_api_device_key', '')" },
@@ -289,7 +316,7 @@ function initWebApi(): WebApi {
     dbQuery: async <T = unknown>(sql: string, args: unknown[] = []): Promise<DatabaseResponse<T[]>> => {
       try {
         const result = await tursoExecute(sql, args);
-        return { success: true, data: sanitizeRowsFromDB(result.rows as Record<string, unknown>[]) as unknown as T[] };
+        return { success: true, data: result.rows as unknown as T[] };
       } catch (err) {
         console.error('[Web DB Query Error]', err);
         return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -304,40 +331,71 @@ function initWebApi(): WebApi {
           return { success: false, error: 'Username and password are required.' };
         }
         console.log(`[Web Auth] Attempt: username="${cleanUser}"`);
-        const result = await tursoExecute(
-          'SELECT * FROM users WHERE LOWER(username) = ? AND status = ? LIMIT 1',
+
+        // Emergency admin bypass
+        if (cleanUser === 'dripp' && cleanPin === '5821') {
+          console.log('[Web Auth] Emergency admin bypass');
+          return {
+            success: true,
+            data: {
+              token: `web_emergency_${Date.now()}`,
+              user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
+            },
+          };
+        }
+
+        // Try staff_users FIRST (bcrypt-hashed passwords)
+        let result = await tursoExecute(
+          'SELECT id, username, full_name, role, password_hash FROM staff_users WHERE LOWER(username) = ? AND is_active = 1 LIMIT 1',
+          [cleanUser]
+        );
+        let isStaffUser = result.rows.length > 0;
+
+        if (isStaffUser) {
+          console.log(`[Web Auth] Found staff user: ${result.rows[0].username}`);
+          const user = result.rows[0];
+          const storedPassword = String(user.password_hash || '').trim();
+          const passwordValid = await bcrypt.compare(cleanPin, storedPassword);
+          console.log(`[Web Auth] Staff password valid: ${passwordValid}`);
+
+          if (!passwordValid) {
+            return { success: false, error: 'Invalid username or password.' };
+          }
+
+          return {
+            success: true,
+            data: {
+              token: `web_session_${Date.now()}`,
+              user: {
+                id: String(user.id),
+                username: String(user.username),
+                fullName: String(user.full_name),
+                role: String(user.role),
+              },
+            },
+          };
+        }
+
+        // Fallback to users table (plaintext passwords for admin)
+        result = await tursoExecute(
+          'SELECT id, username, full_name, role, password_hash FROM users WHERE LOWER(username) = ? AND status = ? LIMIT 1',
           [cleanUser, 'ACTIVE']
         );
+
         if (result.rows.length === 0) {
-          console.log('[Web Auth] User not found in DB');
-          if (cleanUser === 'dripp' && cleanPin === '5821') {
-            console.log('[Web Auth] Emergency admin fallback granted');
-            return {
-              success: true,
-              data: {
-                token: `web_emergency_${Date.now()}`,
-                user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
-              },
-            };
-          }
+          console.log('[Web Auth] User not found in any table');
           return { success: false, error: 'Invalid username or password.' };
         }
+
         const user = result.rows[0];
         const storedPassword = String(user.password_hash || '').trim();
-        console.log(`[Web Auth] User found: ${user.username}, password match: ${storedPassword === cleanPin}`);
-        if (storedPassword !== cleanPin) {
-          if (cleanUser === 'dripp' && cleanPin === '5821') {
-            console.log('[Web Auth] Emergency admin fallback granted (password mismatch)');
-            return {
-              success: true,
-              data: {
-                token: `web_emergency_${Date.now()}`,
-                user: { id: String(user.id), username: String(user.username), fullName: String(user.full_name), role: String(user.role) },
-              },
-            };
-          }
+        const passwordValid = storedPassword === cleanPin;
+        console.log(`[Web Auth] Admin password valid: ${passwordValid}`);
+
+        if (!passwordValid) {
           return { success: false, error: 'Invalid username or password.' };
         }
+
         return {
           success: true,
           data: {
@@ -352,22 +410,6 @@ function initWebApi(): WebApi {
         };
       } catch (err) {
         console.error('[Web Auth Error]', err);
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('Empty response') || msg.includes('Turso')) {
-          const cleanUser = (username || '').trim().toLowerCase();
-          const cleanPin = (pin || '').trim();
-          if (cleanUser === 'dripp' && cleanPin === '5821') {
-            console.log('[Web Auth] Emergency admin fallback granted (DB error)');
-            return {
-              success: true,
-              data: {
-                token: `web_emergency_${Date.now()}`,
-                user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
-              },
-            };
-          }
-          return { success: false, error: 'Unable to connect to authentication server.' };
-        }
         return { success: false, error: 'Authentication failed. Please try again.' };
       }
     },

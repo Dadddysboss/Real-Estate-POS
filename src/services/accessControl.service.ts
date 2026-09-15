@@ -24,7 +24,7 @@ export interface LoginPayload {
 // ------------------------------------------------------------------
 
 export async function fetchStaff(): Promise<any[]> {
-  const sql = `SELECT id, username, full_name, role, branch_id, is_active, pin_hash IS NOT NULL as has_pin FROM staff_users ORDER BY created_at DESC`;
+  const sql = `SELECT * FROM staff_users ORDER BY created_at DESC`;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch staff');
   return res.data;

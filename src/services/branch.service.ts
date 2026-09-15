@@ -24,7 +24,25 @@ export interface BranchSyncPayload {
 // ------------------------------------------------------------------
 
 export async function fetchBranches(): Promise<any[]> {
-  const sql = `SELECT * FROM branches WHERE is_active = TRUE ORDER BY branch_name ASC`;
+  const sql = `
+    SELECT b.*,
+      COALESCE(pc.total_plots, 0) AS total_plots,
+      COALESCE(sr.total_revenue, 0) AS total_revenue
+    FROM branches b
+    LEFT JOIN (
+      SELECT branch_id, COUNT(*) AS total_plots
+      FROM inventory_plots
+      GROUP BY branch_id
+    ) pc ON pc.branch_id = b.id
+    LEFT JOIN (
+      SELECT ip.branch_id, SUM(sd.total_deal_price) AS total_revenue
+      FROM sales_deals sd
+      JOIN inventory_plots ip ON ip.id = sd.plot_id
+      GROUP BY ip.branch_id
+    ) sr ON sr.branch_id = b.id
+    WHERE b.is_active = 1
+    ORDER BY b.branch_name ASC
+  `;
   const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch branches');
   return res.data;
@@ -82,10 +100,10 @@ export async function syncDataToBranch(
   for (const recordId of payload.record_ids) {
     const syncId = `SYNC_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const syncSql = `
-      INSERT INTO branch_sync_queue (id, source_branch_id, target_branch_id, table_name, record_id, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 'PENDING', CURRENT_TIMESTAMP)
+      INSERT INTO branch_sync_queue (id, branch_id, source_branch_id, target_branch_id, action_type, table_name, record_id, status, created_at)
+      VALUES (?, ?, ?, ?, 'INSERT', ?, ?, 'PENDING', CURRENT_TIMESTAMP)
     `;
-    const res = await window.api.dbExecute(syncSql, [syncId, payload.source_branch_id, payload.target_branch_id, payload.table_name, recordId]);
+    const res = await window.api.dbExecute(syncSql, [syncId, payload.source_branch_id, payload.source_branch_id, payload.target_branch_id, payload.table_name, recordId]);
     if (!res.success) throw new Error(res.error || `Failed to queue sync for record ${recordId}`);
   }
   

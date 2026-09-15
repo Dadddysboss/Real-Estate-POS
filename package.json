@@ -14,17 +14,40 @@
       "**/node_modules/@libsql/**"
     ],
     "files": [
-      "dist-fresh/**/*",
+      "dist/**/*",
       "dist-electron/**/*",
       "package.json"
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "huzaifabutt09",
+      "repo": "Real-Estate-POS",
+      "releaseType": "release"
+    },
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.png"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "directories": {
       "output": "dist-release",
@@ -36,6 +59,7 @@
     "electron:dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "build:web": "tsc --noEmit && vite build --config vite.config.web.ts",
+    "build:win": "tsc && vite build && electron-builder --win",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -43,6 +67,7 @@
     "@libsql/client": "^0.6.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.0",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

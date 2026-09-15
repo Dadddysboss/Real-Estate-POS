@@ -84,4 +84,17 @@ contextBridge.exposeInMainWorld('api', {
   openExternalUrl: (url: string): Promise<{ success: boolean; error?: string }> => {
     return ipcRenderer.invoke('shell:open-url', url);
   },
+  // Auto-Update IPC
+  checkForUpdates: (): Promise<{ success: boolean; updateInfo?: any; error?: string }> => {
+    return ipcRenderer.invoke('update:check');
+  },
+  installUpdate: (): Promise<{ success: boolean; error?: string }> => {
+    return ipcRenderer.invoke('update:install');
+  },
+  onUpdateStatus: (callback: (status: string, info?: string) => void) => {
+    ipcRenderer.on('update:status', (_event, status, info) => callback(status, info));
+  },
+  onUpdateProgress: (callback: (percent: number) => void) => {
+    ipcRenderer.on('update:progress', (_event, percent) => callback(percent));
+  },
 });

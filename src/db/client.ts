@@ -6,10 +6,12 @@ let dbClient: Client | null = null;
 
 export function getDbClient(): Client {
   if (!dbClient) {
-    dbClient = createClient({
-      url: process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io',
-      authToken: process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg',
-    });
+    const url = import.meta.env?.VITE_TURSO_DATABASE_URL || process.env.TURSO_DATABASE_URL || '';
+    const token = import.meta.env?.VITE_TURSO_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN || '';
+    if (!url || !token) {
+      throw new Error('TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured in .env');
+    }
+    dbClient = createClient({ url, authToken: token });
   }
   return dbClient;
 }

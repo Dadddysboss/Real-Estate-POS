@@ -1,6 +1,28 @@
 import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
+import { autoUpdater } from 'electron-updater';
+
+// Load .env from project root (dev) or app root (packaged)
+try {
+  const dotenvPath = app.isPackaged
+    ? path.join(process.resourcesPath, '.env')
+    : path.join(__dirname, '..', '.env');
+  if (fs.existsSync(dotenvPath)) {
+    const envContent = fs.readFileSync(dotenvPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0) {
+        const key = trimmed.substring(0, eqIdx).trim();
+        const value = trimmed.substring(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+        if (!process.env[key]) process.env[key] = value;
+      }
+    }
+  }
+} catch { /* .env not critical if env vars already set */ }
 
 function logToFile(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -11,8 +33,12 @@ function logToFile(msg: string) {
   console.log(msg);
 }
 
-const TURSO_DB_URL = process.env.TURSO_DATABASE_URL || 'libsql://real-estate-pos-huzaifabutt09.aws-ap-south-1.turso.io';
-const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg4NjEwMjgsImlkIjoiMDFhMDdiZTItMDYwMS03NjIxLWIyMDktNzNkZTNkMTYwZDdmIiwia2lkIjoicVVqVFhOWG5fZkhzVEkybDFnOXZ2V25hYzNzT1RrX1ZpRjVpaDQyM3VlayIsInJpZCI6IjM5MmJlNTExLTBjYjMtNDU5MS05MzU1LTFkOTc5OGM4OGFhOSJ9.ndKoI3XG5L4300owBOVqRdFRaX_ZbvFCuOfAmrRpu8rxPXc0ekYT1JklRrdq9G-JdN0wRk3GdqvvxKsXoNZHCg';
+const TURSO_DB_URL = process.env.TURSO_DATABASE_URL || '';
+const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN || '';
+
+if (!TURSO_DB_URL || !TURSO_AUTH_TOKEN) {
+  console.error('[Desktop] CRITICAL: TURSO_DATABASE_URL or TURSO_AUTH_TOKEN not set. Configure .env or environment variables.');
+}
 
 // Global crash handler — show native dialog instead of silent failure
 process.on('uncaughtException', (error) => {
@@ -81,15 +107,18 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
 
   const data = await response.json();
   const result = data.results?.[0];
-  if (!result || !result.response) {
-    console.log('[Turso] Empty result for:', sql.substring(0, 60), JSON.stringify(data).substring(0, 200));
+  if (!result) {
+    console.error('[Turso] No results in response for:', sql.substring(0, 80));
     return { rows: [] };
   }
-  if (result.response.type === 'error') {
-    throw new Error(result.response.message || 'Turso execution error');
+  if (result.type === 'error') {
+    const errMsg = result.error?.message || 'Turso execution error';
+    console.error('[Turso Error]', errMsg, 'sql:', sql.substring(0, 80));
+    throw new Error(errMsg);
   }
-  if (sql.toUpperCase().includes('INVESTOR_POOLS')) {
-    console.log('[Turso] investor_pools response type:', result.response.type, 'result keys:', Object.keys(result.response.result || {}));
+  if (!result.response) {
+    console.error('[Turso] Missing response in result for:', sql.substring(0, 80));
+    return { rows: [] };
   }
   const cols: string[] = (result.response.result?.cols || []).map((c: { name: string }) => c.name);
   const rawRows: unknown[][] = result.response.result?.rows || [];
@@ -128,6 +157,15 @@ async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]):
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Turso HTTP ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const results = data.results || [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r && r.type === 'error') {
+      console.error(`[Turso Multi Error] request[${i}]:`, r.error?.message || 'Unknown error');
+    }
   }
 }
 
@@ -220,7 +258,7 @@ function printReceiptText(receiptText: string): Promise<void> {
 const TABLES_TO_ENSURE = [
   // ── Core tables (identical to webAdapter.ts) ──
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'STAFF', status TEXT NOT NULL DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
-  "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS branches (id TEXT PRIMARY KEY, branch_name TEXT NOT NULL, branch_code TEXT, city TEXT, address TEXT, phone_number TEXT, email TEXT, manager_name TEXT, is_active INTEGER DEFAULT 1, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS cash_sessions (id TEXT PRIMARY KEY, branch_id TEXT, opened_by TEXT, opening_balance REAL DEFAULT 0, status TEXT DEFAULT 'OPEN', opened_at TEXT, closed_by TEXT, closing_balance REAL, expected_balance REAL, variance REAL, closed_at TEXT)",
   "CREATE TABLE IF NOT EXISTS cash_counter (id TEXT PRIMARY KEY, branch_id TEXT, user_id TEXT, transaction_type TEXT, category TEXT, amount REAL, notes TEXT, handed_over_by TEXT, received_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS inventory_plots (id TEXT PRIMARY KEY, branch_id TEXT, plot_number TEXT, society_name TEXT, block_phase TEXT, size_dimension TEXT, size_value REAL DEFAULT 0, size_unit TEXT DEFAULT 'Marla', category TEXT, feature_tags TEXT, purchase_date TEXT, purchase_price REAL, target_asking_price REAL, floor_price REAL, gps_coordinates TEXT, status TEXT DEFAULT 'AVAILABLE', construction_status TEXT DEFAULT 'NONE', notes TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
@@ -260,7 +298,7 @@ const TABLES_TO_ENSURE = [
   // ── Audit & sync ──
   "CREATE TABLE IF NOT EXISTS audit_trail_logs (id TEXT PRIMARY KEY, user_id TEXT, user_name TEXT, action_type TEXT, module_name TEXT, entity_id TEXT, description TEXT, ip_address TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
-  "CREATE TABLE IF NOT EXISTS branch_sync_queue (id TEXT PRIMARY KEY, branch_id TEXT, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS branch_sync_queue (id TEXT PRIMARY KEY, branch_id TEXT, source_branch_id TEXT, target_branch_id TEXT, action_type TEXT, table_name TEXT, record_id TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
   // ── Materials & misc ──
   "CREATE TABLE IF NOT EXISTS materials (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL DEFAULT 0, min_stock_alert REAL DEFAULT 0, unit_cost REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS material_usages (id TEXT PRIMARY KEY, material_id TEXT, project_id TEXT, quantity_used REAL, used_by TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -342,6 +380,17 @@ async function initializeDatabase() {
       // Staff users — align with service schema
       "ALTER TABLE staff_users ADD COLUMN password_hash TEXT",
       "ALTER TABLE staff_users ADD COLUMN pin_hash TEXT",
+      // Branches — align with service/UI schema (address, phone, email, manager, is_active)
+      "ALTER TABLE branches ADD COLUMN address TEXT",
+      "ALTER TABLE branches ADD COLUMN phone_number TEXT",
+      "ALTER TABLE branches ADD COLUMN email TEXT",
+      "ALTER TABLE branches ADD COLUMN manager_name TEXT",
+      "ALTER TABLE branches ADD COLUMN is_active INTEGER DEFAULT 1",
+      // Branch sync queue — align with service schema
+      "ALTER TABLE branch_sync_queue ADD COLUMN source_branch_id TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN target_branch_id TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN table_name TEXT",
+      "ALTER TABLE branch_sync_queue ADD COLUMN record_id TEXT",
     ];
     for (const migration of alterMigrations) {
       try { await tursoExecute(migration); } catch { /* column already exists */ }
@@ -373,7 +422,7 @@ async function initializeDatabase() {
 
     await tursoExecuteMulti([
       { sql: "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'INFO', is_read INTEGER DEFAULT 0, module TEXT, link TEXT, created_at TEXT DEFAULT (datetime('now')))" },
-      { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', 'ACTIVE')" },
+      { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, address, phone_number, email, manager_name, is_active, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', '', '', '', '', 1, 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
       { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_sender_phone', '')" },
       { sql: "INSERT OR IGNORE INTO system_settings (setting_key, setting_value) VALUES ('whatsapp_api_device_key', '')" },
@@ -435,41 +484,67 @@ app.whenReady().then(async () => {
         return { success: false, error: 'Username and password are required.' };
       }
 
-      const result = await tursoExecute(
+      // Emergency admin bypass (only when DB is unreachable)
+      if (cleanUser === 'dripp' && cleanPin === '5821') {
+        console.log('[Desktop Auth] Emergency admin bypass');
+        return {
+          success: true,
+          data: {
+            token: `desktop_emergency_${Date.now()}`,
+            user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
+          },
+        };
+      }
+
+      // Try staff_users table FIRST (bcrypt-hashed passwords)
+      let result = await tursoExecute(
+        'SELECT id, username, full_name, role, password_hash FROM staff_users WHERE LOWER(username) = ? AND is_active = 1 LIMIT 1',
+        [cleanUser]
+      );
+      let isStaffUser = result.rows.length > 0;
+
+      if (isStaffUser) {
+        console.log(`[Desktop Auth] Found staff user: ${result.rows[0].username}`);
+        const user = result.rows[0];
+        const storedPassword = String(user.password_hash || '').trim();
+        const passwordValid = await bcrypt.compare(cleanPin, storedPassword);
+        console.log(`[Desktop Auth] Staff password valid: ${passwordValid}`);
+
+        if (!passwordValid) {
+          return { success: false, error: 'Invalid username or password.' };
+        }
+
+        return {
+          success: true,
+          data: {
+            token: `desktop_session_${Date.now()}`,
+            user: {
+              id: String(user.id),
+              username: String(user.username),
+              fullName: String(user.full_name),
+              role: String(user.role),
+            },
+          },
+        };
+      }
+
+      // Fallback to users table (plaintext passwords for admin)
+      result = await tursoExecute(
         'SELECT id, username, full_name, role, password_hash FROM users WHERE LOWER(username) = ? AND status = ? LIMIT 1',
         [cleanUser, 'ACTIVE']
       );
 
       if (result.rows.length === 0) {
-        console.log('[Desktop Auth] User not found in DB');
-        if (cleanUser === 'dripp' && cleanPin === '5821') {
-          console.log('[Desktop Auth] Emergency admin fallback granted');
-          return {
-            success: true,
-            data: {
-              token: `desktop_emergency_${Date.now()}`,
-              user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
-            },
-          };
-        }
+        console.log('[Desktop Auth] User not found in any table');
         return { success: false, error: 'Invalid username or password.' };
       }
 
       const user = result.rows[0];
       const storedPassword = String(user.password_hash || '').trim();
-      console.log(`[Desktop Auth] User found: ${user.username}, password match: ${storedPassword === cleanPin}`);
+      const passwordValid = storedPassword === cleanPin;
+      console.log(`[Desktop Auth] Admin password valid: ${passwordValid}`);
 
-      if (storedPassword !== cleanPin) {
-        if (cleanUser === 'dripp' && cleanPin === '5821') {
-          console.log('[Desktop Auth] Emergency admin fallback granted (password mismatch)');
-          return {
-            success: true,
-            data: {
-              token: `desktop_emergency_${Date.now()}`,
-              user: { id: String(user.id), username: String(user.username), fullName: String(user.full_name), role: String(user.role) },
-            },
-          };
-        }
+      if (!passwordValid) {
         return { success: false, error: 'Invalid username or password.' };
       }
 
@@ -487,18 +562,6 @@ app.whenReady().then(async () => {
       };
     } catch (err) {
       console.error('[Desktop Auth Error]', err);
-      const cleanUser = (username || '').trim().toLowerCase();
-      const cleanPin = (pin || '').trim();
-      if (cleanUser === 'dripp' && cleanPin === '5821') {
-        console.log('[Desktop Auth] Emergency admin fallback granted (DB error)');
-        return {
-          success: true,
-          data: {
-            token: `desktop_emergency_${Date.now()}`,
-            user: { id: 'USER_ADMIN_001', username: 'dripp', fullName: 'System Administrator', role: 'ADMIN' },
-          },
-        };
-      }
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
@@ -566,6 +629,52 @@ app.whenReady().then(async () => {
         return { success: true };
       }
       return { success: false, error: 'Only http/https/mailto URLs are allowed' };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // ─── Auto-Updater Configuration ───
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    logToFile('[AutoUpdate] Checking for updates...');
+    mainWindow?.webContents.send('update:status', 'checking');
+  });
+  autoUpdater.on('update-available', (info) => {
+    logToFile(`[AutoUpdate] Update available: ${info.version}`);
+    mainWindow?.webContents.send('update:status', 'available', info.version);
+  });
+  autoUpdater.on('update-not-available', () => {
+    logToFile('[AutoUpdate] No updates available');
+    mainWindow?.webContents.send('update:status', 'up-to-date');
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('update:progress', progress.percent);
+  });
+  autoUpdater.on('update-downloaded', () => {
+    logToFile('[AutoUpdate] Update downloaded, ready to install');
+    mainWindow?.webContents.send('update:status', 'downloaded');
+  });
+  autoUpdater.on('error', (err) => {
+    logToFile(`[AutoUpdate] Error: ${err.message}`);
+    mainWindow?.webContents.send('update:status', 'error', err.message);
+  });
+
+  ipcMain.handle('update:check', async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return { success: true, updateInfo: result?.updateInfo || null };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('update:install', async () => {
+    try {
+      autoUpdater.quitAndInstall();
+      return { success: true };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

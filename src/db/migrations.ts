@@ -55,13 +55,15 @@ CREATE TABLE IF NOT EXISTS agency_settings (
 CREATE TABLE IF NOT EXISTS branches (
     id TEXT PRIMARY KEY,
     branch_name TEXT NOT NULL,
-    branch_code TEXT UNIQUE NOT NULL,
-    city TEXT NOT NULL,
+    branch_code TEXT,
+    city TEXT,
     address TEXT,
-    manager_id TEXT,
-    status TEXT NOT NULL DEFAULT 'ACTIVE',
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (manager_id) REFERENCES users(id) ON DELETE SET NULL
+    phone_number TEXT,
+    email TEXT,
+    manager_name TEXT,
+    is_active INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ACTIVE',
+    created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- ============================================================================
