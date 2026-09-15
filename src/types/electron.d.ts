@@ -15,6 +15,8 @@ declare global {
       installUpdate: () => Promise<{ success: boolean; error?: string }>;
       onUpdateStatus: (callback: (status: string, info?: string) => void) => void;
       onUpdateProgress: (callback: (percent: number) => void) => void;
+      getSyncStatus: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }>;
+      forceSync: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }>;
     };
   }
 }

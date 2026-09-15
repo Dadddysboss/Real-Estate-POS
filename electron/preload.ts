@@ -97,4 +97,11 @@ contextBridge.exposeInMainWorld('api', {
   onUpdateProgress: (callback: (percent: number) => void) => {
     ipcRenderer.on('update:progress', (_event, percent) => callback(percent));
   },
+  // Sync Status & Manual Sync
+  getSyncStatus: (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }> => {
+    return ipcRenderer.invoke('sync:status');
+  },
+  forceSync: (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }> => {
+    return ipcRenderer.invoke('sync:force');
+  },
 });

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import { autoUpdater } from 'electron-updater';
+import { createClient, Client } from '@libsql/client';
 
 // Load .env from project root (dev) or app root (packaged)
 try {
@@ -40,6 +41,119 @@ if (!TURSO_DB_URL || !TURSO_AUTH_TOKEN) {
   console.error('[Desktop] CRITICAL: TURSO_DATABASE_URL or TURSO_AUTH_TOKEN not set. Configure .env or environment variables.');
 }
 
+// ── Embedded Replica Client ──
+const LOCAL_DB_PATH = path.join(app.getPath('userData'), 'dripp_erp.db');
+let db: Client;
+let isOnline = false;
+let lastSyncTime: string | null = null;
+let syncInProgress = false;
+
+const offlineQueue: { sql: string; args: unknown[]; timestamp: number }[] = [];
+const OFFLINE_QUEUE_FILE = path.join(app.getPath('userData'), 'offline_queue.json');
+
+function loadOfflineQueue() {
+  try {
+    if (fs.existsSync(OFFLINE_QUEUE_FILE)) {
+      const data = fs.readFileSync(OFFLINE_QUEUE_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) offlineQueue.push(...parsed);
+      console.log(`[Desktop] Loaded ${offlineQueue.length} queued offline writes`);
+    }
+  } catch { /* best effort */ }
+}
+
+function saveOfflineQueue() {
+  try {
+    fs.writeFileSync(OFFLINE_QUEUE_FILE, JSON.stringify(offlineQueue, null, 2), 'utf-8');
+  } catch { /* best effort */ }
+}
+
+function initDatabase() {
+  const hasRemote = !!TURSO_DB_URL && !!TURSO_AUTH_TOKEN;
+  console.log(`[Desktop] Initializing DB: local=${LOCAL_DB_PATH}, remote=${hasRemote ? 'yes' : 'none'}`);
+
+  db = createClient({
+    url: `file:${LOCAL_DB_PATH}`,
+    syncUrl: hasRemote ? TURSO_DB_URL : undefined,
+    authToken: hasRemote ? TURSO_AUTH_TOKEN : undefined,
+    syncInterval: 30,
+  });
+
+  loadOfflineQueue();
+}
+
+async function syncDatabase() {
+  if (syncInProgress) return;
+  syncInProgress = true;
+  try {
+    await db.sync();
+    isOnline = true;
+    lastSyncTime = new Date().toISOString();
+    console.log('[Desktop] DB sync completed');
+  } catch (err) {
+    isOnline = false;
+    console.warn('[Desktop] DB sync failed (offline?):', err instanceof Error ? err.message : String(err));
+  } finally {
+    syncInProgress = false;
+  }
+}
+
+async function flushOfflineQueue() {
+  if (offlineQueue.length === 0) return;
+  console.log(`[Desktop] Flushing ${offlineQueue.length} queued writes...`);
+  const remaining: typeof offlineQueue = [];
+  for (const item of offlineQueue) {
+    try {
+      await db.execute({ sql: item.sql, args: item.args as any[] });
+    } catch (err) {
+      console.error('[Desktop] Failed to flush queued write:', item.sql.substring(0, 60), err);
+      remaining.push(item);
+    }
+  }
+  offlineQueue.length = 0;
+  offlineQueue.push(...remaining);
+  saveOfflineQueue();
+  if (remaining.length === 0) {
+    console.log('[Desktop] All queued writes flushed successfully');
+  } else {
+    console.warn(`[Desktop] ${remaining.length} writes still queued`);
+  }
+}
+
+async function dbExecute(sql: string, args: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
+  const isWrite = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(sql);
+  try {
+    const result = await db.execute({ sql, args: args as any[] });
+    isOnline = true;
+    if (isWrite) syncDatabase().catch(() => {});
+    return {
+      rows: result.rows.map(row => {
+        const obj: Record<string, unknown> = {};
+        for (const key in row) obj[key] = row[key] ?? '';
+        return obj;
+      }),
+    };
+  } catch (err) {
+    if (isWrite && !isOnline) {
+      offlineQueue.push({ sql, args, timestamp: Date.now() });
+      saveOfflineQueue();
+      console.log(`[Desktop] Write queued offline: ${sql.substring(0, 60)}`);
+      return { rows: [] };
+    }
+    throw err;
+  }
+}
+
+async function dbExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<void> {
+  try {
+    await db.batch(requests.map(r => ({ sql: r.sql, args: (r.args || []) as any[] })));
+    isOnline = true;
+  } catch (err) {
+    console.error('[Desktop] Batch execute failed:', err);
+    throw err;
+  }
+}
+
 // Global crash handler — show native dialog instead of silent failure
 process.on('uncaughtException', (error) => {
   logToFile(`[FATAL] Uncaught Exception: ${error.stack || error.message}`);
@@ -57,117 +171,6 @@ process.on('unhandledRejection', (reason) => {
     `An unhandled promise rejection occurred:\n\n${reason instanceof Error ? (reason.stack || reason.message) : String(reason)}`
   );
 });
-
-function sanitizeParam(p: unknown): { type: string; value?: string } {
-  if (p === undefined || p === null) return { type: 'null' };
-  if (typeof p === 'number') return { type: 'text', value: String(Number.isNaN(p) ? 0 : p) };
-  if (typeof p === 'boolean') return { type: 'text', value: p ? '1' : '0' };
-  if (typeof p === 'object') return { type: 'text', value: JSON.stringify(p) };
-  return { type: 'text', value: String(p) };
-}
-
-function sanitizeRow(row: Record<string, unknown>): Record<string, unknown> {
-  const safe: Record<string, unknown> = {};
-  for (const key in row) {
-    const val = row[key];
-    if (val === null || val === undefined) {
-      safe[key] = '';
-    } else if (typeof val === 'object') {
-      safe[key] = JSON.stringify(val);
-    } else {
-      safe[key] = val;
-    }
-  }
-  return safe;
-}
-
-async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: Record<string, unknown>[] }> {
-  const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
-  const response = await fetch(httpUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      requests: [{
-        type: 'execute',
-        stmt: {
-          sql,
-          args: args.map(sanitizeParam),
-        },
-      }],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Turso HTTP ${response.status}: ${text}`);
-  }
-
-  const data = await response.json();
-  const result = data.results?.[0];
-  if (!result) {
-    console.error('[Turso] No results in response for:', sql.substring(0, 80));
-    return { rows: [] };
-  }
-  if (result.type === 'error') {
-    const errMsg = result.error?.message || 'Turso execution error';
-    console.error('[Turso Error]', errMsg, 'sql:', sql.substring(0, 80));
-    throw new Error(errMsg);
-  }
-  if (!result.response) {
-    console.error('[Turso] Missing response in result for:', sql.substring(0, 80));
-    return { rows: [] };
-  }
-  const cols: string[] = (result.response.result?.cols || []).map((c: { name: string }) => c.name);
-  const rawRows: unknown[][] = result.response.result?.rows || [];
-  const rows = rawRows.map((row: unknown[]) => {
-    const obj: Record<string, unknown> = {};
-    cols.forEach((col: string, i: number) => {
-      const cell = row[i];
-      obj[col] = cell !== undefined && cell !== null && typeof cell === 'object' && (cell as Record<string, unknown>).value !== undefined
-        ? (cell as Record<string, unknown>).value
-        : cell ?? '';
-    });
-    return sanitizeRow(obj);
-  });
-  return { rows };
-}
-
-async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<void> {
-  const httpUrl = `https://${TURSO_DB_URL.replace('libsql://', '')}/v2/pipeline`;
-  const response = await fetch(httpUrl, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      requests: requests.map(r => ({
-        type: 'execute',
-        stmt: {
-          sql: r.sql,
-          args: (r.args || []).map(sanitizeParam),
-        },
-      })),
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Turso HTTP ${response.status}: ${text}`);
-  }
-
-  const data = await response.json();
-  const results = data.results || [];
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r && r.type === 'error') {
-      console.error(`[Turso Multi Error] request[${i}]:`, r.error?.message || 'Unknown error');
-    }
-  }
-}
 
 let mainWindow: BrowserWindow | null = null;
 let printWindow: BrowserWindow | null = null;
@@ -358,7 +361,7 @@ const TABLES_TO_ENSURE = [
 async function initializeDatabase() {
   try {
     console.log('[Desktop] Ensuring all database tables exist...');
-    await tursoExecuteMulti(TABLES_TO_ENSURE.map(sql => ({ sql })));
+    await dbExecuteMulti(TABLES_TO_ENSURE.map(sql => ({ sql })));
     console.log('[Desktop] All tables ensured.');
 
     // ALTER TABLE migrations for existing databases — IDENTICAL to webAdapter.ts
@@ -426,22 +429,22 @@ async function initializeDatabase() {
       "ALTER TABLE branch_sync_queue ADD COLUMN record_id TEXT",
     ];
     for (const migration of alterMigrations) {
-      try { await tursoExecute(migration); } catch { /* column already exists */ }
+      try { await dbExecute(migration); } catch { /* column already exists */ }
     }
 
     // Drop and recreate investor tables if schema is outdated
     // This handles the case where old tables had incompatible columns
     try {
       // Check if investor_pools has the old 'target_capital' column (not 'total_target_capital')
-      const checkRes = await tursoExecute("PRAGMA table_info(investor_pools)");
+      const checkRes = await dbExecute("PRAGMA table_info(investor_pools)");
       const poolCols = (checkRes.rows || []).map((r: Record<string, unknown>) => String(r.name || ''));
       if (poolCols.includes('target_capital') && !poolCols.includes('total_target_capital')) {
         console.log('[Desktop] Detected outdated investor_pools schema — recreating...');
-        await tursoExecute("DROP TABLE IF EXISTS investor_payouts");
-        await tursoExecute("DROP TABLE IF EXISTS dividend_distributions");
-        await tursoExecute("DROP TABLE IF EXISTS investors");
-        await tursoExecute("DROP TABLE IF EXISTS investor_pools");
-        await tursoExecuteMulti([
+        await dbExecute("DROP TABLE IF EXISTS investor_payouts");
+        await dbExecute("DROP TABLE IF EXISTS dividend_distributions");
+        await dbExecute("DROP TABLE IF EXISTS investors");
+        await dbExecute("DROP TABLE IF EXISTS investor_pools");
+        await dbExecuteMulti([
           { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
@@ -453,7 +456,7 @@ async function initializeDatabase() {
       console.warn('[Desktop] Investor schema check/recreation failed (non-blocking):', e);
     }
 
-    await tursoExecuteMulti([
+    await dbExecuteMulti([
       { sql: "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, title TEXT NOT NULL, message TEXT NOT NULL, type TEXT DEFAULT 'INFO', is_read INTEGER DEFAULT 0, module TEXT, link TEXT, created_at TEXT DEFAULT (datetime('now')))" },
       { sql: "INSERT OR IGNORE INTO branches (id, branch_name, branch_code, city, address, phone_number, email, manager_name, is_active, status) VALUES ('BRANCH_MAIN', 'Head Office', 'MAIN-01', 'Lahore', '', '', '', '', 1, 'ACTIVE')" },
       { sql: "INSERT INTO users (id, username, password_hash, full_name, role, status, created_at) VALUES ('USER_ADMIN_001', 'dripp', '5821', 'System Administrator', 'ADMIN', 'ACTIVE', datetime('now')) ON CONFLICT(username) DO UPDATE SET password_hash = '5821', status = 'ACTIVE', role = 'ADMIN'" },
@@ -470,9 +473,19 @@ app.whenReady().then(async () => {
   logToFile('[Desktop] app.whenReady fired');
 
   try {
-    logToFile('[Desktop] Initializing database...');
+    logToFile('[Desktop] Initializing embedded replica database...');
+    initDatabase();
+    await syncDatabase();
     await initializeDatabase();
-    logToFile('[Desktop] Database initialized successfully');
+    await flushOfflineQueue();
+    logToFile('[Desktop] Database initialized and synced successfully');
+
+    // Periodic sync every 30 seconds
+    setInterval(() => {
+      syncDatabase().then(() => {
+        if (isOnline) flushOfflineQueue();
+      }).catch(() => {});
+    }, 30_000);
   } catch (err: any) {
     logToFile(`[Desktop] DB init failed: ${err.message || String(err)}`);
     dialog.showErrorBox(
@@ -484,7 +497,7 @@ app.whenReady().then(async () => {
   try {
     ipcMain.handle('db:execute', async (_event, { sql, args }) => {
       try {
-        const result = await tursoExecute(sql, args || []);
+        const result = await dbExecute(sql, args || []);
         console.log(`[Desktop DB Execute] sql=${sql.substring(0, 80)} rows_affected=${JSON.stringify(result)}`);
         return { success: true, data: result };
       } catch (err) {
@@ -495,7 +508,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('db:query', async (_event, { sql, args }) => {
     try {
-      const result = await tursoExecute(sql, args || []);
+      const result = await dbExecute(sql, args || []);
       console.log(`[Desktop DB Query] sql=${sql.substring(0, 80)} rows=${result.rows.length}`);
       if (result.rows.length === 0 && sql.toUpperCase().includes('INVESTOR_POOLS')) {
         console.log('[Desktop DB Query] WARN: investor_pools query returned 0 rows');
@@ -530,7 +543,7 @@ app.whenReady().then(async () => {
       }
 
       // Try staff_users table FIRST (bcrypt-hashed passwords)
-      let result = await tursoExecute(
+      let result = await dbExecute(
         'SELECT id, username, full_name, role, password_hash FROM staff_users WHERE LOWER(username) = ? AND is_active = 1 LIMIT 1',
         [cleanUser]
       );
@@ -562,7 +575,7 @@ app.whenReady().then(async () => {
       }
 
       // Fallback to users table (plaintext passwords for admin)
-      result = await tursoExecute(
+      result = await dbExecute(
         'SELECT id, username, full_name, role, password_hash FROM users WHERE LOWER(username) = ? AND status = ? LIMIT 1',
         [cleanUser, 'ACTIVE']
       );
@@ -608,9 +621,36 @@ app.whenReady().then(async () => {
     }
   });
 
+  // ─── Sync Status & Manual Sync ───
+  ipcMain.handle('sync:status', async () => {
+    return {
+      success: true,
+      data: {
+        isOnline,
+        lastSyncTime,
+        syncInProgress,
+        queuedWrites: offlineQueue.length,
+        localDbPath: LOCAL_DB_PATH,
+      },
+    };
+  });
+
+  ipcMain.handle('sync:force', async () => {
+    try {
+      await syncDatabase();
+      await flushOfflineQueue();
+      return {
+        success: true,
+        data: { isOnline, lastSyncTime, queuedWrites: offlineQueue.length },
+      };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('cash:get-sessions', async (_event, branchId: string) => {
     try {
-      const result = await tursoExecute(
+      const result = await dbExecute(
         'SELECT id, branch_id, opened_by, opening_balance, status, opened_at FROM cash_sessions WHERE branch_id = ? ORDER BY opened_at DESC LIMIT 20',
         [branchId]
       );
@@ -622,7 +662,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('cash:open-session', async (_event, { branchId, openingBalance, userId }) => {
     try {
-      const open = await tursoExecute(
+      const open = await dbExecute(
         `SELECT id FROM cash_sessions WHERE branch_id = ? AND status = 'OPEN' LIMIT 1`,
         [branchId]
       );
@@ -630,7 +670,7 @@ app.whenReady().then(async () => {
         return { success: false, error: 'A cash drawer session is already OPEN for this branch.' };
       }
       const id = `SESS_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-      await tursoExecute(
+      await dbExecute(
         'INSERT INTO cash_sessions (id, branch_id, opened_by, opening_balance, status, opened_at) VALUES (?, ?, ?, ?, ?, ?)',
         [id, branchId, userId, openingBalance, 'OPEN', new Date().toISOString()]
       );
@@ -642,7 +682,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('cash:close-session', async (_event, { sessionId, closingBalance, expectedBalance, variance, userId }) => {
     try {
-      await tursoExecute(
+      await dbExecute(
         `UPDATE cash_sessions SET status = 'CLOSED', closed_by = ?, closing_balance = ?, expected_balance = ?, variance = ?, closed_at = ? WHERE id = ? AND status = 'OPEN'`,
         [userId, closingBalance, expectedBalance, variance, new Date().toISOString(), sessionId]
       );
