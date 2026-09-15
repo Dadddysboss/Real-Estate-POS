@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ShieldCheck, X, Trash2, FileText, User, QrCode, AlertTriangle, CheckCircle } from 'lucide-react';
 import {
   fetchKYCRegistry, addKYCEntry, verifyKYC, deleteKYC,
@@ -20,6 +20,9 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<'kyc' | 'documents'>('kyc');
   const [qrCodeDoc, setQrCodeDoc] = useState<any | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [kycPage, setKycPage] = useState(0);
+  const [docPage, setDocPage] = useState(0);
+  const PAGE_SIZE = 15;
 
   // KYC form
   const [personType, setPersonType] = useState<'BUYER' | 'SELLER' | 'AGENT' | 'TENANT' | 'INVESTOR'>('BUYER');
@@ -145,8 +148,16 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
-  const expiringDocs = checkExpiringDocuments(documents, 30);
-  const verifiedCount = kycRecords.filter(r => r.verified).length;
+  const expiringDocs = useMemo(() => checkExpiringDocuments(documents, 30), [documents]);
+  const verifiedCount = useMemo(() => kycRecords.filter(r => r.verified).length, [kycRecords]);
+  const pagedKyc = useMemo(() => {
+    const start = kycPage * PAGE_SIZE;
+    return kycRecords.slice(start, start + PAGE_SIZE);
+  }, [kycRecords, kycPage]);
+  const pagedDocs = useMemo(() => {
+    const start = docPage * PAGE_SIZE;
+    return documents.slice(start, start + PAGE_SIZE);
+  }, [documents, docPage]);
 
   return (
     <div className="page-container">
@@ -236,7 +247,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {kycRecords.map((kyc) => (
+                {pagedKyc.map((kyc) => (
                   <tr key={kyc.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4 font-medium text-white">{kyc.full_name}</td>
                     <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{kyc.person_type}</span></td>
@@ -260,6 +271,19 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
                 {kycRecords.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">No KYC records</td></tr>}
               </tbody>
             </table>
+            {kycRecords.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800/60">
+                <span className="text-[11px] text-slate-500">
+                  Showing {kycPage * PAGE_SIZE + 1}–{Math.min((kycPage + 1) * PAGE_SIZE, kycRecords.length)} of {kycRecords.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setKycPage(p => Math.max(0, p - 1))} disabled={kycPage === 0}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Prev</button>
+                  <button onClick={() => setKycPage(p => p + 1)} disabled={(kycPage + 1) * PAGE_SIZE >= kycRecords.length}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Next</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -277,7 +301,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {documents.map((doc) => (
+                {pagedDocs.map((doc) => (
                   <tr key={doc.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4 font-medium text-white">{doc.title}</td>
                     <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">{doc.document_type}</span></td>
@@ -297,6 +321,19 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
                 {documents.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-slate-500">No documents</td></tr>}
               </tbody>
             </table>
+            {documents.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800/60">
+                <span className="text-[11px] text-slate-500">
+                  Showing {docPage * PAGE_SIZE + 1}–{Math.min((docPage + 1) * PAGE_SIZE, documents.length)} of {documents.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setDocPage(p => Math.max(0, p - 1))} disabled={docPage === 0}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Prev</button>
+                  <button onClick={() => setDocPage(p => p + 1)} disabled={(docPage + 1) * PAGE_SIZE >= documents.length}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Next</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

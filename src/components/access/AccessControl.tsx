@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, Users, X, Key, AlertTriangle, Lock, CheckCircle, Eye } from 'lucide-react';
 import { fetchStaff, addStaff, updateStaffRole, setPinCode, fetchAuditLogs, searchAuditLogs } from '../../services/accessControl.service';
+import { PaginatedTable } from '../common/PaginatedTable';
 
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
 
@@ -117,8 +118,8 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
-  const activeUsers = staff.filter(s => s.is_active).length;
-  const adminCount = staff.filter(s => s.role === 'ADMIN').length;
+  const activeUsers = useMemo(() => staff.filter(s => s.is_active).length, [staff]);
+  const adminCount = useMemo(() => staff.filter(s => s.role === 'ADMIN').length, [staff]);
 
   return (
     <div className="page-container">
@@ -222,23 +223,28 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
               onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-sm text-white" />
           </div>
           <div className="max-h-[50vh] overflow-y-auto">
-            {auditLogs.map((log) => (
-              <div key={log.id} className="border-b border-slate-800/60 p-3 hover:bg-slate-900/40">
-                <div className="flex items-start gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : log.action_type === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
-                    {log.action_type === 'CREATE' ? <CheckCircle size={14} /> : log.action_type === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-300">
-                      <span className="font-bold text-white">{log.user_name}</span>
-                      {' '}<span className="text-slate-400">{log.action_type}</span> in <span className="text-purple-400 font-mono">{log.module_name}</span>
-                    </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{log.description || '—'}</p>
-                    <p className="text-[10px] text-slate-600 mt-1">{(log.created_at ?? '').slice(0, 19)}</p>
+            <PaginatedTable
+              data={auditLogs}
+              pageSize={25}
+              keyExtractor={(log) => log.id}
+              renderItem={(log) => (
+                <div className="border-b border-slate-800/60 p-3 hover:bg-slate-900/40">
+                  <div className="flex items-start gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : log.action_type === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
+                      {log.action_type === 'CREATE' ? <CheckCircle size={14} /> : log.action_type === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-slate-300">
+                        <span className="font-bold text-white">{log.user_name}</span>
+                        {' '}<span className="text-slate-400">{log.action_type}</span> in <span className="text-purple-400 font-mono">{log.module_name}</span>
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{log.description || '—'}</p>
+                      <p className="text-[10px] text-slate-600 mt-1">{(log.created_at ?? '').slice(0, 19)}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )}
+            />
             {auditLogs.length === 0 && <div className="p-6 text-center text-slate-500">No audit logs found</div>}
           </div>
         </div>

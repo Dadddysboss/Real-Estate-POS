@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Wallet, Plus, X, Trash2, DollarSign } from 'lucide-react';
 import {
   fetchExpenses, recordExpense, deleteExpense,
@@ -22,6 +22,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'expenses' | 'assets'>('expenses');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [expensePage, setExpensePage] = useState(0);
+  const PAGE_SIZE = 20;
 
   // Expense form
   const [expenseCategory, setExpenseCategory] = useState('SALARIES');
@@ -120,9 +122,13 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
 
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
-  const summary = calculateExpenseSummary(expenses);
-  const totalAssetValue = assets.reduce((s, a) => s + a.current_book_value, 0);
-  const totalDepreciation = assets.reduce((s, a) => s + (a.purchase_price - a.current_book_value), 0);
+  const summary = useMemo(() => calculateExpenseSummary(expenses), [expenses]);
+  const totalAssetValue = useMemo(() => assets.reduce((s, a) => s + a.current_book_value, 0), [assets]);
+  const totalDepreciation = useMemo(() => assets.reduce((s, a) => s + (a.purchase_price - a.current_book_value), 0), [assets]);
+  const pagedExpenses = useMemo(() => {
+    const start = expensePage * PAGE_SIZE;
+    return expenses.slice(start, start + PAGE_SIZE);
+  }, [expenses, expensePage]);
 
   return (
     <div className="page-container">
@@ -199,7 +205,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {expenses.map((exp) => (
+                {pagedExpenses.map((exp) => (
                   <tr key={exp.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4 text-slate-300">{(exp.date ?? '').slice(0, 10)}</td>
                     <td className="py-2.5 px-4">
@@ -224,6 +230,19 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                 )}
               </tbody>
             </table>
+            {expenses.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800/60">
+                <span className="text-[11px] text-slate-500">
+                  Showing {expensePage * PAGE_SIZE + 1}–{Math.min((expensePage + 1) * PAGE_SIZE, expenses.length)} of {expenses.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setExpensePage(p => Math.max(0, p - 1))} disabled={expensePage === 0}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Prev</button>
+                  <button onClick={() => setExpensePage(p => p + 1)} disabled={(expensePage + 1) * PAGE_SIZE >= expenses.length}
+                    className="px-2 py-1 rounded bg-slate-800 text-xs text-slate-400 hover:text-white disabled:opacity-30">Next</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (

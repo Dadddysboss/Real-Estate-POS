@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DataCacheProvider } from './contexts/DataCacheContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { CashCounter } from './components/dashboard/CashCounter';
 import { PlotInventory } from './components/inventory/PlotInventory';
@@ -141,6 +142,7 @@ const App: React.FC = () => {
   }
 
   return (
+    <DataCacheProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 select-text">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col z-20 overflow-y-auto">
@@ -272,6 +274,7 @@ const App: React.FC = () => {
         getUnreadCount().then(setUnreadNotifs);
       }} />
     </div>
+    </DataCacheProvider>
   );
 
   function renderModuleContent(module: string) {
