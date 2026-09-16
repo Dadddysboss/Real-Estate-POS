@@ -2,6 +2,7 @@ import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
 
 export interface KYCPayload {
+  party_type: 'INVESTOR' | 'CLIENT' | 'AGENT' | 'BUYER' | 'SELLER' | 'TENANT';
   person_type: 'BUYER' | 'SELLER' | 'AGENT' | 'TENANT' | 'INVESTOR';
   full_name: string;
   cnic: string;
@@ -73,11 +74,11 @@ export async function addKYCEntry(
 ): Promise<string> {
   const id = `KYC_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const sql = `
-    INSERT INTO kyc_registry (id, person_type, full_name, cnic, phone_number, address, email, verified, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO kyc_registry (id, party_type, person_type, full_name, cnic, phone_number, address, email, verified, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.person_type, payload.full_name, payload.cnic,
+    id, payload.party_type || payload.person_type, payload.person_type, payload.full_name, payload.cnic,
     payload.phone_number, payload.address, payload.email, payload.verified
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to add KYC entry');

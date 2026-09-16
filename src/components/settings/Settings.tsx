@@ -213,8 +213,8 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange, on
     setSaving(true);
     try {
       await window.api.dbExecute(
-        `INSERT INTO agency_settings (id, agency_name, tagline, phone_primary, whatsapp_number, address, currency_symbol, logo_url_or_base64, updated_at)
-         VALUES ('MAIN_SETTINGS', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `INSERT INTO agency_settings (id, agency_name, tagline, phone_primary, whatsapp_number, address, currency_symbol, logo_url_or_base64, created_at, updated_at)
+         VALUES ('MAIN_SETTINGS', ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            agency_name = excluded.agency_name, tagline = excluded.tagline,
            phone_primary = excluded.phone_primary, whatsapp_number = excluded.whatsapp_number,

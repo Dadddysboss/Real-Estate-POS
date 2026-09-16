@@ -75,6 +75,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
     }
     try {
       await addKYCEntry(currentUser.id, currentUser.fullName, {
+        party_type: personType,
         person_type: personType,
         full_name: fullName.trim(),
         cnic: cnic.trim(),

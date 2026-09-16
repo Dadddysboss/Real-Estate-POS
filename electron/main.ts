@@ -613,6 +613,10 @@ async function initializeDatabase() {
       ["construction_expenses", "rate", "REAL DEFAULT 0"],
       ["construction_expenses", "supplier_name", "TEXT DEFAULT ''"],
       ["construction_expenses", "labor_name", "TEXT DEFAULT ''"],
+      // Investor tables
+      ["investors", "contributed_amount", "REAL DEFAULT 0"],
+      ["investors", "equity_percentage", "REAL DEFAULT 0"],
+      ["investors", "total_payout_received", "REAL DEFAULT 0"],
       // Investor pools
       ["investor_pools", "total_target_capital", "REAL DEFAULT 0"],
       ["investor_pools", "description", "TEXT DEFAULT ''"],

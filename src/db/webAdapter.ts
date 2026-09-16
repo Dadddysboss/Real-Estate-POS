@@ -106,7 +106,7 @@ async function removeQueuedWrite(id: string): Promise<void> {
 // ── Required Field Defaults (auto-inject for stale queued writes) ──
 const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
   investor_pools: { branch_id: 'BRANCH_MAIN' },
-  agency_settings: { updated_at: new Date().toISOString() },
+  agency_settings: { created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
   office_expenses: { branch_id: 'BRANCH_MAIN' },
   fixed_assets: { branch_id: 'BRANCH_MAIN' },
   inventory_plots: { branch_id: 'BRANCH_MAIN' },
@@ -116,6 +116,7 @@ const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
   daily_expenses: { branch_id: 'BRANCH_MAIN' },
   construction_projects: { branch_id: 'BRANCH_MAIN' },
   expenses: { branch_id: 'BRANCH_MAIN' },
+  kyc_registry: { party_type: 'INVESTOR', person_type: 'BUYER' },
 };
 
 /**
@@ -537,6 +538,10 @@ async function autoSeedDatabase(): Promise<void> {
       ["construction_expenses", "rate", "REAL DEFAULT 0"],
       ["construction_expenses", "supplier_name", "TEXT DEFAULT ''"],
       ["construction_expenses", "labor_name", "TEXT DEFAULT ''"],
+      // Investor tables
+      ["investors", "contributed_amount", "REAL DEFAULT 0"],
+      ["investors", "equity_percentage", "REAL DEFAULT 0"],
+      ["investors", "total_payout_received", "REAL DEFAULT 0"],
       // Investor pools
       ["investor_pools", "total_target_capital", "REAL DEFAULT 0"],
       ["investor_pools", "description", "TEXT DEFAULT ''"],

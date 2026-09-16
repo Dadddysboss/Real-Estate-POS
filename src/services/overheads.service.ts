@@ -152,11 +152,11 @@ export async function addAsset(
   const currentBookValue = payload.purchase_price;
 
   const sql = `
-    INSERT INTO fixed_assets (id, asset_name, category, purchase_price, purchase_date, useful_life_years, salvage_value, depreciation_method, annual_depreciation, current_book_value, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO fixed_assets (id, branch_id, asset_name, category, purchase_price, purchase_date, useful_life_years, salvage_value, depreciation_method, annual_depreciation, current_book_value, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.asset_name, payload.category, Math.round(payload.purchase_price),
+    id, 'BRANCH_MAIN', payload.asset_name, payload.category, Math.round(payload.purchase_price),
     payload.purchase_date, payload.useful_life_years, Math.round(payload.salvage_value),
     payload.depreciation_method, Math.round(annualDepreciation), Math.round(currentBookValue)
   ]);
