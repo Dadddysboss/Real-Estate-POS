@@ -434,81 +434,94 @@ const TABLES_TO_ENSURE = [
   "CREATE INDEX IF NOT EXISTS idx_plaza_units_plaza ON plaza_units(plaza_id)",
 ];
 
+// Safe column addition — checks PRAGMA table_info before ALTER TABLE to avoid noisy duplicate column errors
+async function safeAddColumn(table: string, column: string, definition: string): Promise<void> {
+  try {
+    const res = await dbExecute(`PRAGMA table_info(${table})`);
+    const cols = (res.rows || []).map((r: Record<string, unknown>) => String(r.name || ''));
+    if (!cols.includes(column)) {
+      await dbExecute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  } catch {
+    // Table might not exist yet — safe to ignore
+  }
+}
+
 async function initializeDatabase() {
   try {
     console.log('[Desktop] Ensuring all database tables exist...');
     await dbExecuteMulti(TABLES_TO_ENSURE.map(sql => ({ sql })));
     console.log('[Desktop] All tables ensured.');
 
-    // ALTER TABLE migrations for existing databases — IDENTICAL to webAdapter.ts
-    const alterMigrations = [
-      "ALTER TABLE construction_expenses ADD COLUMN sand_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN bajri_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN srya_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN truck_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN cement_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN bricks_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN labor_details TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN notes TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN category TEXT DEFAULT 'MATERIAL'",
-      "ALTER TABLE construction_expenses ADD COLUMN material_type TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN item_name TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN quantity REAL DEFAULT 1",
-      "ALTER TABLE construction_expenses ADD COLUMN unit_price REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN rate REAL DEFAULT 0",
-      "ALTER TABLE construction_expenses ADD COLUMN supplier_name TEXT DEFAULT ''",
-      "ALTER TABLE construction_expenses ADD COLUMN labor_name TEXT DEFAULT ''",
-      // Investor pools — align old DBs with new schema
-      "ALTER TABLE investor_pools ADD COLUMN total_target_capital REAL DEFAULT 0",
-      "ALTER TABLE investor_pools ADD COLUMN description TEXT DEFAULT ''",
-      "ALTER TABLE investor_pools ADD COLUMN branch_id TEXT",
-      "ALTER TABLE investor_pools ADD COLUMN project_type TEXT DEFAULT 'LAND'",
-      // Office expenses — align with service schema
-      "ALTER TABLE office_expenses ADD COLUMN recurring INTEGER DEFAULT 0",
-      "ALTER TABLE office_expenses ADD COLUMN recurring_frequency TEXT",
-      "ALTER TABLE office_expenses ADD COLUMN date TEXT",
-      // Fixed assets — align with service schema
-      "ALTER TABLE fixed_assets ADD COLUMN category TEXT",
-      "ALTER TABLE fixed_assets ADD COLUMN purchase_price REAL DEFAULT 0",
-      "ALTER TABLE fixed_assets ADD COLUMN useful_life_years INTEGER DEFAULT 5",
-      "ALTER TABLE fixed_assets ADD COLUMN salvage_value REAL DEFAULT 0",
-      "ALTER TABLE fixed_assets ADD COLUMN depreciation_method TEXT DEFAULT 'STRAIGHT_LINE'",
-      "ALTER TABLE fixed_assets ADD COLUMN annual_depreciation REAL DEFAULT 0",
-      "ALTER TABLE fixed_assets ADD COLUMN current_book_value REAL DEFAULT 0",
-      // KYC registry — align with service schema
-      "ALTER TABLE kyc_registry ADD COLUMN person_type TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN full_name TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN cnic TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN phone_number TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN address TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN email TEXT",
-      "ALTER TABLE kyc_registry ADD COLUMN verified INTEGER DEFAULT 0",
-      // Documents — align with service schema
-      "ALTER TABLE documents ADD COLUMN document_type TEXT",
-      "ALTER TABLE documents ADD COLUMN description TEXT",
-      "ALTER TABLE documents ADD COLUMN related_person_id TEXT",
-      "ALTER TABLE documents ADD COLUMN related_plot_id TEXT",
-      "ALTER TABLE documents ADD COLUMN expiry_date TEXT",
-      // Staff users — align with service schema
-      "ALTER TABLE staff_users ADD COLUMN password_hash TEXT",
-      "ALTER TABLE staff_users ADD COLUMN pin_hash TEXT",
-      // Branches — align with service/UI schema (address, phone, email, manager, is_active)
-      "ALTER TABLE branches ADD COLUMN address TEXT",
-      "ALTER TABLE branches ADD COLUMN phone_number TEXT",
-      "ALTER TABLE branches ADD COLUMN email TEXT",
-      "ALTER TABLE branches ADD COLUMN manager_name TEXT",
-      "ALTER TABLE branches ADD COLUMN is_active INTEGER DEFAULT 1",
-      // Branch sync queue — align with service schema
-      "ALTER TABLE branch_sync_queue ADD COLUMN source_branch_id TEXT",
-      "ALTER TABLE branch_sync_queue ADD COLUMN target_branch_id TEXT",
-      "ALTER TABLE branch_sync_queue ADD COLUMN table_name TEXT",
-      "ALTER TABLE branch_sync_queue ADD COLUMN record_id TEXT",
+    // ALTER TABLE migrations — PRAGMA-checked to avoid duplicate column errors
+    const alterMigrations: [string, string, string][] = [
+      ["construction_expenses", "sand_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "bajri_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "srya_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "truck_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "cement_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "bricks_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "labor_details", "TEXT DEFAULT ''"],
+      ["construction_expenses", "notes", "TEXT DEFAULT ''"],
+      ["construction_expenses", "category", "TEXT DEFAULT 'MATERIAL'"],
+      ["construction_expenses", "material_type", "TEXT DEFAULT ''"],
+      ["construction_expenses", "item_name", "TEXT DEFAULT ''"],
+      ["construction_expenses", "quantity", "REAL DEFAULT 1"],
+      ["construction_expenses", "unit_price", "REAL DEFAULT 0"],
+      ["construction_expenses", "rate", "REAL DEFAULT 0"],
+      ["construction_expenses", "supplier_name", "TEXT DEFAULT ''"],
+      ["construction_expenses", "labor_name", "TEXT DEFAULT ''"],
+      // Investor pools
+      ["investor_pools", "total_target_capital", "REAL DEFAULT 0"],
+      ["investor_pools", "description", "TEXT DEFAULT ''"],
+      ["investor_pools", "branch_id", "TEXT"],
+      ["investor_pools", "project_type", "TEXT DEFAULT 'LAND'"],
+      // Office expenses
+      ["office_expenses", "recurring", "INTEGER DEFAULT 0"],
+      ["office_expenses", "recurring_frequency", "TEXT"],
+      ["office_expenses", "date", "TEXT"],
+      // Fixed assets
+      ["fixed_assets", "category", "TEXT"],
+      ["fixed_assets", "purchase_price", "REAL DEFAULT 0"],
+      ["fixed_assets", "useful_life_years", "INTEGER DEFAULT 5"],
+      ["fixed_assets", "salvage_value", "REAL DEFAULT 0"],
+      ["fixed_assets", "depreciation_method", "TEXT DEFAULT 'STRAIGHT_LINE'"],
+      ["fixed_assets", "annual_depreciation", "REAL DEFAULT 0"],
+      ["fixed_assets", "current_book_value", "REAL DEFAULT 0"],
+      // KYC registry
+      ["kyc_registry", "person_type", "TEXT"],
+      ["kyc_registry", "full_name", "TEXT"],
+      ["kyc_registry", "cnic", "TEXT"],
+      ["kyc_registry", "phone_number", "TEXT"],
+      ["kyc_registry", "address", "TEXT"],
+      ["kyc_registry", "email", "TEXT"],
+      ["kyc_registry", "verified", "INTEGER DEFAULT 0"],
+      // Documents
+      ["documents", "document_type", "TEXT"],
+      ["documents", "description", "TEXT"],
+      ["documents", "related_person_id", "TEXT"],
+      ["documents", "related_plot_id", "TEXT"],
+      ["documents", "expiry_date", "TEXT"],
+      // Staff users
+      ["staff_users", "password_hash", "TEXT"],
+      ["staff_users", "pin_hash", "TEXT"],
+      // Branches
+      ["branches", "address", "TEXT"],
+      ["branches", "phone_number", "TEXT"],
+      ["branches", "email", "TEXT"],
+      ["branches", "manager_name", "TEXT"],
+      ["branches", "is_active", "INTEGER DEFAULT 1"],
+      // Branch sync queue
+      ["branch_sync_queue", "source_branch_id", "TEXT"],
+      ["branch_sync_queue", "target_branch_id", "TEXT"],
+      ["branch_sync_queue", "table_name", "TEXT"],
+      ["branch_sync_queue", "record_id", "TEXT"],
       // Plot & acquisition image support
-      "ALTER TABLE inventory_plots ADD COLUMN image_url TEXT DEFAULT ''",
-      "ALTER TABLE land_acquisitions ADD COLUMN image_url TEXT DEFAULT ''",
+      ["inventory_plots", "image_url", "TEXT DEFAULT ''"],
+      ["land_acquisitions", "image_url", "TEXT DEFAULT ''"],
     ];
-    for (const migration of alterMigrations) {
-      try { await dbExecute(migration); } catch { /* column already exists */ }
+    for (const [table, column, definition] of alterMigrations) {
+      await safeAddColumn(table, column, definition);
     }
 
     // Drop and recreate investor tables if schema is outdated
