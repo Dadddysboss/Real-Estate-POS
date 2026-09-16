@@ -25,6 +25,7 @@ import { NotificationCenter } from './components/notifications/NotificationCente
 import { getUnreadCount } from './db/unifiedAdapter';
 import InstallmentEngine from './components/installment/InstallmentEngine';
 import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator } from 'lucide-react';
+import { safeStr } from './db/dbSanitizer';
 
 interface User {
   id: string;
@@ -140,11 +141,12 @@ const App: React.FC = () => {
   };
 
   if (!isAuthenticated || !user) {
-    return <AuthGate onSuccess={handleAuthSuccess} />;
+    return <ErrorBoundary module="Auth"><AuthGate onSuccess={handleAuthSuccess} /></ErrorBoundary>;
   }
 
   return (
     <DataCacheProvider>
+    <ErrorBoundary module="App">
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 select-text">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col z-20 overflow-y-auto">
@@ -176,7 +178,7 @@ const App: React.FC = () => {
                 <div className={`flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
                   <item.icon size={20} />
                 </div>
-                <span className="font-semibold">{item.name}</span>
+                <span className="font-semibold">{safeStr(item.name)}</span>
               </button>
             );
           })}
@@ -205,8 +207,8 @@ const App: React.FC = () => {
               <ShieldCheck size={16} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-white truncate">{user?.fullName}</p>
-              <p className="text-[10px] text-slate-400 capitalize">{user?.role?.toLowerCase()}</p>
+              <p className="text-xs font-semibold text-white truncate">{safeStr(user?.fullName)}</p>
+              <p className="text-[10px] text-slate-400 capitalize">{safeStr(user?.role).toLowerCase()}</p>
             </div>
             <button
               onClick={handleLogout}
@@ -224,7 +226,7 @@ const App: React.FC = () => {
         {/* Top Header */}
         <header className="h-16 flex-shrink-0 border-b border-slate-800 bg-slate-900/90 px-6 flex items-center justify-between z-10">
           <div className="flex items-center space-x-4">
-            <h1 className="text-lg font-bold text-white capitalize">{activeModule}</h1>
+            <h1 className="text-lg font-bold text-white capitalize">{safeStr(activeModule)}</h1>
             <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 bg-slate-800 rounded">v1.0.0</span>
           </div>
 
@@ -248,7 +250,7 @@ const App: React.FC = () => {
               <Bell size={20} />
               {unreadNotifs > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
-                  {unreadNotifs > 99 ? '99+' : unreadNotifs}
+                  {unreadNotifs > 99 ? '99+' : String(unreadNotifs)}
                 </span>
               )}
             </button>
@@ -271,11 +273,14 @@ const App: React.FC = () => {
       </div>
 
       {/* Notification Center Drawer */}
-      <NotificationCenter isOpen={notifOpen} onClose={() => {
-        setNotifOpen(false);
-        getUnreadCount().then(setUnreadNotifs);
-      }} />
+      <ErrorBoundary module="Notifications">
+        <NotificationCenter isOpen={notifOpen} onClose={() => {
+          setNotifOpen(false);
+          getUnreadCount().then(setUnreadNotifs);
+        }} />
+      </ErrorBoundary>
     </div>
+    </ErrorBoundary>
     </DataCacheProvider>
   );
 

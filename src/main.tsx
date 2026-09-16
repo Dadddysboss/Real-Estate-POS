@@ -4,7 +4,11 @@ import { initWebDatabase } from './db/webAdapter';
 import App from './App';
 import './index.css';
 
-initWebDatabase();
+try {
+  initWebDatabase();
+} catch (e) {
+  console.error('[Web] Failed to initialize web database:', e);
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
