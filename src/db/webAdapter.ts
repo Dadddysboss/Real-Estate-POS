@@ -239,9 +239,21 @@ async function tursoExecute(sql: string, args: unknown[] = []): Promise<{ rows: 
   const mappedRows: Record<string, unknown>[] = rawRows.map((row: unknown[]) => {
     const obj: Record<string, unknown> = {};
     cols.forEach((col: string, i: number) => {
-      obj[col] = row[i] !== undefined && row[i] !== null && typeof row[i] === 'object' && (row[i] as Record<string, unknown>).value !== undefined
-        ? (row[i] as Record<string, unknown>).value
-        : row[i] ?? '';
+      let val = row[i];
+      // Unwrap Turso value objects
+      if (val !== undefined && val !== null && typeof val === 'object' && (val as Record<string, unknown>).value !== undefined) {
+        val = (val as Record<string, unknown>).value;
+      }
+      // Convert BigInt to number
+      if (typeof val === 'bigint') {
+        obj[col] = Number(val);
+      } else if (val === null || val === undefined) {
+        obj[col] = '';
+      } else if (typeof val === 'object' && !(val instanceof Date)) {
+        obj[col] = JSON.stringify(val);
+      } else {
+        obj[col] = val;
+      }
     });
     return obj;
   });

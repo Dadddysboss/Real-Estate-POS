@@ -46,6 +46,8 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
   const [payoutInvestor, setPayoutInvestor] = useState<any>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const safeStr = (v: unknown): string => v == null ? '' : String(v);
+
   const [poolName, setPoolName] = useState('');
   const [poolProjectType, setPoolProjectType] = useState<ProjectType>('LAND');
   const [targetCapital, setTargetCapital] = useState(0);
@@ -276,7 +278,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                     <h4 className="font-semibold text-white text-sm truncate">{pool.pool_name}</h4>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${PROJECT_TYPE_BADGE[projType] || PROJECT_TYPE_BADGE.LAND}`}>
-                        {projType}
+                        {safeStr(projType)}
                       </span>
                       <span className="text-[10px] text-slate-500">
                         {fmt(pool.total_raised || 0)}/{fmt(pool.total_target_capital)}
@@ -284,7 +286,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                     </div>
                   </div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${pool.status === 'COMPLETED' ? 'status-emerald' : pool.status === 'CLOSED' ? 'status-slate' : 'status-purple'}`}>
-                    {pool.status}
+                    {safeStr(pool.status)}
                   </span>
                 </div>
                 <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5">
@@ -322,10 +324,10 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`text-[10px] font-bold px-2 py-1 rounded border ${PROJECT_TYPE_BADGE[selectedPool.project_type || 'LAND']}`}>
-                        {selectedPool.project_type || 'LAND'}
+                        {safeStr(selectedPool.project_type || 'LAND')}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${selectedPool.status === 'COMPLETED' ? 'status-emerald' : selectedPool.status === 'CLOSED' ? 'status-slate' : 'status-purple'}`}>
-                        {selectedPool.status}
+                        {safeStr(selectedPool.status)}
                       </span>
                     </div>
                   </div>
@@ -344,7 +346,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                   </div>
                   <div className="stat-card">
                     <span className="stat-card-label">Investors</span>
-                    <span className="stat-card-value text-sm text-sky-400">{stats.investorCount}</span>
+                    <span className="stat-card-value text-sm text-sky-400">{safeStr(stats.investorCount)}</span>
                     <span className="stat-card-sub">Total Equity: {stats.totalEquity.toFixed(1)}%</span>
                   </div>
                   <div className="stat-card">
@@ -378,9 +380,9 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                           <div key={inv.id} className="bg-slate-950/60 rounded-xl p-3 flex flex-col gap-2">
                             <div className="flex items-center justify-between">
                               <div className="flex-1 min-w-0">
-                                <p className="font-medium text-white text-sm truncate">{inv.investor_name}</p>
+                                <p className="font-medium text-white text-sm truncate">{safeStr(inv.investor_name)}</p>
                                 <p className="text-[10px] text-slate-500">
-                                  Invested: {fmt(inv.contributed_amount)} | Stated Equity: {inv.equity_percentage}%
+                                  Invested: {fmt(inv.contributed_amount)} | Stated Equity: {safeStr(inv.equity_percentage)}%
                                 </p>
                               </div>
                               <div className="text-right ml-3">
@@ -426,13 +428,13 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                           return (
                             <tr key={inv.id} className="hover:bg-slate-900/40">
                               <td className="py-2.5 px-4">
-                                <p className="font-medium text-white">{inv.investor_name}</p>
-                                <p className="text-[10px] text-slate-500">{inv.phone_number || '-'}</p>
+                                <p className="font-medium text-white">{safeStr(inv.investor_name)}</p>
+                                <p className="text-[10px] text-slate-500">{safeStr(inv.phone_number) || '-'}</p>
                               </td>
                               <td className="py-2.5 px-4 text-right font-mono text-white font-bold">{fmtNum(inv.contributed_amount)}</td>
                               <td className="py-2.5 px-4 text-right">
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300">
-                                  {inv.equity_percentage}%
+                                  {safeStr(inv.equity_percentage)}%
                                 </span>
                               </td>
                               <td className="py-2.5 px-4 text-right text-[10px] text-slate-400">{share.toFixed(1)}%</td>
@@ -480,14 +482,14 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                         <tbody className="divide-y divide-slate-800/60">
                           {payouts.map((pay) => (
                             <tr key={pay.id} className="hover:bg-slate-900/40">
-                              <td className="py-2 px-3 font-medium text-white">{pay.investor_name || 'Investor'}</td>
+                              <td className="py-2 px-3 font-medium text-white">{safeStr(pay.investor_name) || 'Investor'}</td>
                               <td className="py-2 px-3 text-slate-400">{pay.payout_date?.split('T')[0] || pay.payout_date || '-'}</td>
                               <td className="py-2 px-3">
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
-                                  {pay.payment_mode || 'CASH'}
+                                  {safeStr(pay.payment_mode) || 'CASH'}
                                 </span>
                               </td>
-                              <td className="py-2 px-3 text-slate-500 max-w-[120px] truncate">{pay.notes || '-'}</td>
+                              <td className="py-2 px-3 text-slate-500 max-w-[120px] truncate">{safeStr(pay.notes) || '-'}</td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">{fmt(pay.amount_paid)}</td>
                             </tr>
                           ))}
@@ -514,8 +516,8 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
                         <tbody className="divide-y divide-slate-800/60">
                           {dividends.map((div) => (
                             <tr key={div.id} className="hover:bg-slate-900/40">
-                              <td className="py-2 px-3 font-medium text-white">{div.investor_name}</td>
-                              <td className="py-2 px-3 text-slate-400">{div.distribution_date || '-'}</td>
+                              <td className="py-2 px-3 font-medium text-white">{safeStr(div.investor_name)}</td>
+                              <td className="py-2 px-3 text-slate-400">{safeStr(div.distribution_date) || '-'}</td>
                               <td className="py-2 px-3 text-slate-500">Pool dividend distribution</td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">{fmt(div.profit_amount)}</td>
                             </tr>

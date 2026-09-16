@@ -203,7 +203,20 @@ async function dbExecute(sql: string, args: unknown[] = []): Promise<{ rows: Rec
     return {
       rows: result.rows.map(row => {
         const obj: Record<string, unknown> = {};
-        for (const key in row) obj[key] = row[key] ?? '';
+        for (const key in row) {
+          const val = row[key];
+          // Convert BigInt to number (better-sqlite3 returns BigInt for COUNT/SUM)
+          if (typeof val === 'bigint') {
+            obj[key] = Number(val);
+          } else if (val === null || val === undefined) {
+            obj[key] = '';
+          } else if (typeof val === 'object' && !(val instanceof Date)) {
+            // Safeguard: serialize unexpected objects to string
+            obj[key] = JSON.stringify(val);
+          } else {
+            obj[key] = val;
+          }
+        }
         return obj;
       }),
     };

@@ -508,7 +508,7 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                 ) : (
                   <span className="text-rose-400">- Debit / Dena</span>
                 )}
-                <span className="text-slate-500 text-sm ml-2">for {txParty.party_name}</span>
+                <span className="text-slate-500 text-sm ml-2">for {safeStr(txParty.party_name)}</span>
               </h3>
               <button onClick={() => setShowTxModal(false)} className="text-slate-400 hover:text-white transition"><X size={18} /></button>
             </div>
@@ -568,9 +568,9 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                     : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
                 }`}>
                   {txType === 'CREDIT_LENA' ? (
-                    <><TrendingUp size={14} /> {txParty.party_name} will owe you {fmt(parseFloat(txAmount))}</>
+                    <><TrendingUp size={14} /> {safeStr(txParty.party_name)} will owe you {fmt(parseFloat(txAmount))}</>
                   ) : (
-                    <><TrendingDown size={14} /> {txParty.party_name} will pay back {fmt(parseFloat(txAmount))}</>
+                    <><TrendingDown size={14} /> {safeStr(txParty.party_name)} will pay back {fmt(parseFloat(txAmount))}</>
                   )}
                 </div>
               )}
@@ -605,8 +605,8 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                   <FileText size={18} className="text-emerald-400" /> Transaction Ledger
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {ledgerParty.party_name} &middot; {ledgerParty.phone_number} &middot;{' '}
-                  <span className={getPartyTypeColor(ledgerParty.party_type).split(' ')[1]}>{ledgerParty.party_type}</span>
+                  {safeStr(ledgerParty.party_name)} &middot; {safeStr(ledgerParty.phone_number)} &middot;{' '}
+                  <span className={getPartyTypeColor(ledgerParty.party_type).split(' ')[1]}>{safeStr(ledgerParty.party_type)}</span>
                 </p>
               </div>
               <button onClick={() => setShowLedger(false)} className="text-slate-400 hover:text-white transition"><X size={18} /></button>
@@ -661,13 +661,13 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                           else running -= tx.amount;
                           const paymentMatch = tx.description.match(/^\[(.+?)\]\s*(.*)$/);
                           const paymentMethod = paymentMatch ? paymentMatch[1] : '—';
-                          const note = paymentMatch ? paymentMatch[2] || '—' : tx.description || '—';
+                          const note = paymentMatch ? (paymentMatch[2] || '—') : safeStr(tx.description) || '—';
                           return (
                             <tr key={tx.id} className="hover:bg-slate-800/40">
                               <td className="py-2.5 px-3 text-slate-500 font-mono">{i + 1}</td>
                               <td className="py-2.5 px-3 text-slate-300 flex items-center gap-1.5">
                                 <Calendar size={10} className="text-slate-600" />
-                                {(tx.created_at ?? '').slice(0, 10)}
+                                {safeStr(tx.created_at).slice(0, 10)}
                               </td>
                               <td className="py-2.5 px-3">
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
@@ -683,7 +683,7 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                                   {tx.entry_type === 'CREDIT_LENA' ? '+' : '-'}
                                 </span>
                               </td>
-                              <td className="py-2.5 px-3 text-slate-300 max-w-[200px] truncate">{note}</td>
+                              <td className="py-2.5 px-3 text-slate-300 max-w-[200px] truncate">{safeStr(note)}</td>
                               <td className="py-2.5 px-3 text-right font-mono font-bold">
                                 <span className={tx.entry_type === 'CREDIT_LENA' ? 'text-emerald-400' : 'text-rose-400'}>
                                   {tx.entry_type === 'CREDIT_LENA' ? '+' : '-'}{fmt(tx.amount)}

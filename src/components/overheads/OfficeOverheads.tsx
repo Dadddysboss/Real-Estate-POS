@@ -15,6 +15,7 @@ interface OfficeOverheadsProps {
 const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser }) => {
+  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,14 +213,14 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                   <tr key={exp.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4 text-slate-300">{(exp.date ?? '').slice(0, 10)}</td>
                     <td className="py-2.5 px-4">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{exp.category}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{safeStr(exp.category)}</span>
                     </td>
-                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{exp.description || '—'}</td>
+                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{safeStr(exp.description) || '—'}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-rose-400 font-bold">{fmtNum(exp.amount)}</td>
                     <td className="py-2.5 px-4">
-                      {exp.recurring ? <span className="text-[10px] text-sky-400">{exp.recurring_frequency}</span> : <span className="text-[10px] text-slate-500">One-time</span>}
+                      {exp.recurring ? <span className="text-[10px] text-sky-400">{safeStr(exp.recurring_frequency)}</span> : <span className="text-[10px] text-slate-500">One-time</span>}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-400">{exp.payment_method}</td>
+                    <td className="py-2.5 px-4 text-slate-400">{safeStr(exp.payment_method)}</td>
                     <td className="py-2.5 px-4 text-right">
                       <button onClick={() => handleDeleteExpense(exp.id)}
                         className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded" title="Delete">
@@ -266,8 +267,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                 {assets.map((asset) => (
                   <tr key={asset.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4">
-                      <p className="font-medium text-white">{asset.asset_name}</p>
-                      <p className="text-[10px] text-slate-500">{asset.category} · {asset.useful_life_years}yr life</p>
+                      <p className="font-medium text-white">{safeStr(asset.asset_name)}</p>
+                      <p className="text-[10px] text-slate-500">{safeStr(asset.category)} · {asset.useful_life_years}yr life</p>
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-white">{fmtNum(asset.purchase_price)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-emerald-400">{fmtNum(asset.current_book_value)}</td>

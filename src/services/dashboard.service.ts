@@ -90,9 +90,9 @@ export async function fetchDashboardMetrics(branchId: string): Promise<Dashboard
     const agentCommissionDebt = agentRes.data?.[0]?.total || 0;
 
     // Investor Capital
-    const investorSql = `SELECT COALESCE(SUM(invested_amount), 0) as total FROM investor_members`;
+    const investorSql = `SELECT COALESCE(SUM(contributed_amount), 0) as total FROM investors`;
     const investorRes: DatabaseResponse<{ total: number }[]> = await window.api.dbQuery(investorSql, []);
-    const investorCapital = investorRes.data?.[0]?.total || 0;
+    const investorCapital = Number(investorRes.data?.[0]?.total) || 0;
 
     return {
       totalInventoryValuation,

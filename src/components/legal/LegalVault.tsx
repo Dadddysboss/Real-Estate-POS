@@ -12,6 +12,7 @@ interface LegalVaultProps {
 }
 
 export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
+  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [kycRecords, setKycRecords] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +215,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
           </div>
           <div className="flex flex-wrap gap-2">
             {expiringDocs.map(doc => (
-              <span key={doc.id} className="text-xs text-amber-300 bg-amber-900/50 px-2 py-1 rounded">{doc.title}</span>
+              <span key={doc.id} className="text-xs text-amber-300 bg-amber-900/50 px-2 py-1 rounded">{safeStr(doc.title)}</span>
             ))}
           </div>
         </div>
@@ -249,10 +250,10 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
               <tbody className="divide-y divide-slate-800/60">
                 {pagedKyc.map((kyc) => (
                   <tr key={kyc.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 font-medium text-white">{kyc.full_name}</td>
-                    <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{kyc.person_type}</span></td>
-                    <td className="py-2.5 px-4 font-mono text-slate-300">{kyc.cnic}</td>
-                    <td className="py-2.5 px-4 text-slate-300">{kyc.phone_number}</td>
+                    <td className="py-2.5 px-4 font-medium text-white">{safeStr(kyc.full_name)}</td>
+                    <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{safeStr(kyc.person_type)}</span></td>
+                    <td className="py-2.5 px-4 font-mono text-slate-300">{safeStr(kyc.cnic)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{safeStr(kyc.phone_number)}</td>
                     <td className="py-2.5 px-4">
                       {kyc.verified ? <span className="text-emerald-400 flex items-center gap-1 text-[10px]"><CheckCircle size={12} />Verified</span> : <span className="text-amber-400 text-[10px]">Pending</span>}
                     </td>
@@ -303,10 +304,10 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
               <tbody className="divide-y divide-slate-800/60">
                 {pagedDocs.map((doc) => (
                   <tr key={doc.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 font-medium text-white">{doc.title}</td>
-                    <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">{doc.document_type}</span></td>
-                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{doc.description || '—'}</td>
-                    <td className={`py-2.5 px-4 font-mono text-xs ${expiringDocs.some(d => d.id === doc.id) ? 'text-amber-400' : 'text-slate-300'}`}>{doc.expiry_date || '—'}</td>
+                    <td className="py-2.5 px-4 font-medium text-white">{safeStr(doc.title)}</td>
+                    <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">{safeStr(doc.document_type)}</span></td>
+                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{safeStr(doc.description) || '—'}</td>
+                    <td className={`py-2.5 px-4 font-mono text-xs ${expiringDocs.some(d => d.id === doc.id) ? 'text-amber-400' : 'text-slate-300'}`}>{safeStr(doc.expiry_date) || '—'}</td>
                     <td className="py-2.5 px-4 text-slate-400 text-xs">{doc.related_plot_id ? `Plot: ${doc.related_plot_id}` : doc.related_person_id ? `Person: ${doc.related_person_id.slice(0, 12)}` : '—'}</td>
                     <td className="py-2.5 px-4 text-right space-x-1">
                       <button onClick={() => setQrCodeDoc(doc)} className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded" title="Generate QR">

@@ -33,9 +33,11 @@ export function sanitizeRecordFromDB<T extends Record<string, unknown>>(row: T):
   const safe: Record<string, unknown> = {};
   for (const key in row) {
     const val = row[key];
-    if (val === null || val === undefined) {
+    if (typeof val === 'bigint') {
+      safe[key] = Number(val);
+    } else if (val === null || val === undefined) {
       safe[key] = '';
-    } else if (typeof val === 'object') {
+    } else if (typeof val === 'object' && !(val instanceof Date)) {
       safe[key] = JSON.stringify(val);
     } else {
       safe[key] = val;
