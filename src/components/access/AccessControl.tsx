@@ -128,10 +128,10 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
     setUsername(''); setPassword(''); setFullName(''); setRole('VIEWER'); setBranchId(''); setIsActive(true);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
-
   const activeUsers = useMemo(() => staff.filter(s => s.is_active).length, [staff]);
   const adminCount = useMemo(() => staff.filter(s => s.role === 'ADMIN').length, [staff]);
+
+  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
   return (
     <div className="page-container">

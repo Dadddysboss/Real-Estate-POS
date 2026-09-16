@@ -137,8 +137,6 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
-
   const summary = useMemo(() => calculateExpenseSummary(expenses), [expenses]);
   const totalAssetValue = useMemo(() => assets.reduce((s, a) => s + Number(a.current_book_value) || 0, 0), [assets]);
   const totalDepreciation = useMemo(() => assets.reduce((s, a) => s + (Number(a.purchase_price) || 0) - (Number(a.current_book_value) || 0), 0), [assets]);
@@ -146,6 +144,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
     const start = expensePage * PAGE_SIZE;
     return expenses.slice(start, start + PAGE_SIZE);
   }, [expenses, expensePage]);
+
+  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
   return (
     <div className="page-container">

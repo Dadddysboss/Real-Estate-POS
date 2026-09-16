@@ -158,8 +158,6 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
     setRelatedPersonId(''); setRelatedPlotId(''); setFilePath('');
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
-
   const expiringDocs = useMemo(() => checkExpiringDocuments(documents, 30), [documents]);
   const verifiedCount = useMemo(() => kycRecords.filter(r => r.verified).length, [kycRecords]);
   const pagedKyc = useMemo(() => {
@@ -170,6 +168,8 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
     const start = docPage * PAGE_SIZE;
     return documents.slice(start, start + PAGE_SIZE);
   }, [documents, docPage]);
+
+  if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
   return (
     <div className="page-container">
