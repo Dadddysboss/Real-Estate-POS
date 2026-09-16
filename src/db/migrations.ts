@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS inventory_plots (
     gps_coordinates TEXT,
     status TEXT NOT NULL DEFAULT 'AVAILABLE' CHECK (status IN ('AVAILABLE', 'SOLD', 'ON_HOLD', 'UNDER_DEVELOPMENT', 'BOOKED')),
     notes TEXT,
+    image_url TEXT DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
@@ -223,6 +224,7 @@ CREATE TABLE IF NOT EXISTS land_acquisitions (
     debt_remaining REAL NOT NULL,
     acquisition_date TEXT NOT NULL,
     registry_doc_url TEXT,
+    image_url TEXT DEFAULT '',
     created_at TEXT NOT NULL
 );
 
