@@ -23,7 +23,7 @@ interface OfficeOverheadsProps {
   currentUser: CurrentUser;
 }
 
-const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
+const fmt = (n: number) => `Rs. ${Math.round(Number(n) || 0).toLocaleString('en-PK')}`;
 
 export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser }) => {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
@@ -137,8 +137,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
   if (loading) return <div className="flex items-center justify-center h-64 text-slate-400">Loading...</div>;
 
   const summary = useMemo(() => calculateExpenseSummary(expenses), [expenses]);
-  const totalAssetValue = useMemo(() => assets.reduce((s, a) => s + a.current_book_value, 0), [assets]);
-  const totalDepreciation = useMemo(() => assets.reduce((s, a) => s + (a.purchase_price - a.current_book_value), 0), [assets]);
+  const totalAssetValue = useMemo(() => assets.reduce((s, a) => s + Number(a.current_book_value) || 0, 0), [assets]);
+  const totalDepreciation = useMemo(() => assets.reduce((s, a) => s + (Number(a.purchase_price) || 0) - (Number(a.current_book_value) || 0), 0), [assets]);
   const pagedExpenses = useMemo(() => {
     const start = expensePage * PAGE_SIZE;
     return expenses.slice(start, start + PAGE_SIZE);
@@ -175,19 +175,19 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       <div className="grid grid-cols-4 gap-4">
         <div className="glass-card p-4">
           <p className="text-[10px] uppercase text-slate-500">Total Expenses</p>
-          <p className="text-base font-bold text-rose-400 mt-1 font-mono">{fmt(summary.total)}</p>
+          <p className="text-base font-bold text-rose-400 mt-1 font-mono">{fmt(Number(summary.total) || 0)}</p>
         </div>
         <div className="glass-card p-4">
           <p className="text-[10px] uppercase text-slate-500">Recurring Costs</p>
-          <p className="text-base font-bold text-sky-400 mt-1 font-mono">{fmt(summary.recurringTotal)}</p>
+          <p className="text-base font-bold text-sky-400 mt-1 font-mono">{fmt(Number(summary.recurringTotal) || 0)}</p>
         </div>
         <div className="glass-card p-4">
           <p className="text-[10px] uppercase text-slate-500">Asset Book Value</p>
-          <p className="text-base font-bold text-emerald-400 mt-1 font-mono">{fmt(totalAssetValue)}</p>
+          <p className="text-base font-bold text-emerald-400 mt-1 font-mono">{fmt(Number(totalAssetValue) || 0)}</p>
         </div>
         <div className="glass-card p-4">
           <p className="text-[10px] uppercase text-slate-500">Total Depreciation</p>
-          <p className="text-base font-bold text-amber-400 mt-1 font-mono">{fmt(totalDepreciation)}</p>
+          <p className="text-base font-bold text-amber-400 mt-1 font-mono">{fmt(Number(totalDepreciation) || 0)}</p>
         </div>
       </div>
 
@@ -391,5 +391,5 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
   );
 };
 
-const fmtNum = (n: number) => Math.round(n).toLocaleString('en-PK');
+const fmtNum = (n: unknown) => Math.round(Number(n) || 0).toLocaleString('en-PK');
 export default OfficeOverheads;

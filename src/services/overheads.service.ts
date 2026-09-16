@@ -232,14 +232,14 @@ export async function updateAssetBookValue(assetId: string): Promise<void> {
 // ------------------------------------------------------------------
 
 export function calculateExpenseSummary(expenses: ExpenseRecord[]) {
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
-  const recurringTotal = expenses.filter(e => e.recurring).reduce((s, e) => s + e.amount, 0);
-  const oneTimeTotal = expenses.filter(e => !e.recurring).reduce((s, e) => s + e.amount, 0);
+  const total = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const recurringTotal = expenses.filter(e => e.recurring).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const oneTimeTotal = expenses.filter(e => !e.recurring).reduce((s, e) => s + (Number(e.amount) || 0), 0);
   
   const byCategory: Record<string, number> = {};
   expenses.forEach((e) => {
-    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+    byCategory[e.category] = (byCategory[e.category] || 0) + (Number(e.amount) || 0);
   });
   
-  return { total, recurringTotal, oneTimeTotal, byCategory, count: expenses.length };
+  return { total: Number(total) || 0, recurringTotal: Number(recurringTotal) || 0, oneTimeTotal: Number(oneTimeTotal) || 0, byCategory, count: expenses.length };
 }
