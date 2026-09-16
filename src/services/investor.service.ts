@@ -295,7 +295,7 @@ export async function fetchPoolRevenueLinks(_poolId: string): Promise<{
   const cashRes: DatabaseResponse<any[]> = await window.api.dbQuery(
     `SELECT COALESCE(SUM(amount), 0) as total_inflow
      FROM cash_counter
-     WHERE transaction_type = 'INFLOW'`, []
+     WHERE transaction_type = 'CASH_IN'`, []
   );
   if (!cashRes.success) throw new Error(cashRes.error || 'Failed to fetch cash inflow');
   const cashInflow = cashRes.data && cashRes.data.length > 0

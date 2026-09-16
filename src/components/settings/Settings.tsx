@@ -86,8 +86,8 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange, on
     try {
       // Ensure agency_settings row exists
       await window.api.dbExecute(
-        `INSERT INTO agency_settings (id, agency_name, currency_symbol, created_at)
-         VALUES ('MAIN_SETTINGS', 'Dripp Real Estate & DigiKhata ERP', 'Rs.', datetime('now'))
+        `INSERT INTO agency_settings (id, agency_name, currency_symbol, created_at, updated_at)
+         VALUES ('MAIN_SETTINGS', 'Dripp Real Estate & DigiKhata ERP', 'Rs.', datetime('now'), datetime('now'))
          ON CONFLICT(id) DO NOTHING`, []
       );
       // Load agency settings

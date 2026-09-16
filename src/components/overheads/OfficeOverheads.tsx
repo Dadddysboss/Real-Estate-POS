@@ -25,6 +25,9 @@ interface OfficeOverheadsProps {
 
 const fmt = (n: number) => `Rs. ${Math.round(Number(n) || 0).toLocaleString('en-PK')}`;
 
+/** Safely format any unknown value as a localised integer string (guards BigInt, null, object). */
+const fmtNum = (n: unknown): string => Math.round(Number(n) || 0).toLocaleString('en-PK');
+
 export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser }) => {
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const [assets, setAssets] = useState<AssetRecord[]>([]);
@@ -391,5 +394,4 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
   );
 };
 
-const fmtNum = (n: unknown) => Math.round(Number(n) || 0).toLocaleString('en-PK');
 export default OfficeOverheads;

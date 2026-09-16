@@ -301,24 +301,14 @@ CREATE TABLE IF NOT EXISTS sales_deals (
   FOREIGN KEY (plot_id) REFERENCES inventory_plots(id)
 );
 
--- ============================================================================
--- MODULE 10c: CASH COUNTER TRANSACTION LOG
--- ============================================================================
 
-CREATE TABLE IF NOT EXISTS cash_counter (
-    id TEXT PRIMARY KEY,
-    branch_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('INFLOW', 'OUTFLOW')),
-    category TEXT NOT NULL,
-    amount REAL NOT NULL,
-    notes TEXT,
-    handed_over_by TEXT,
-    received_by TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
-);
+-- ============================================================================
+-- MODULE 10c: CASH COUNTER TRANSACTION LOG (defined in Module 4 above)
+-- ============================================================================
+-- NOTE: cash_counter table is defined in Module 4 with transaction_type CHECK (CASH_IN, CASH_OUT).
+-- All services use CASH_IN / CASH_OUT. Do NOT redefine here.
+
+
 
 -- ============================================================================
 -- MODULE 11: INSTALLMENT ENGINE & PAYMENT SCHEDULES
