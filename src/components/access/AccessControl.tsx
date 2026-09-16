@@ -4,6 +4,17 @@ import { fetchStaff, addStaff, updateStaffRole, setPinCode, fetchAuditLogs, sear
 import { PaginatedTable } from '../common/PaginatedTable';
 import { safeStr } from '../../db/dbSanitizer';
 
+const renderSafeMeta = (val: unknown): string => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (typeof val === 'bigint') return val.toString();
+  if (typeof val === 'object') {
+    try { return JSON.stringify(val); } catch { return '[Complex Data]'; }
+  }
+  return String(val);
+};
+
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
 
 interface AccessControlProps {
@@ -227,20 +238,20 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
             <PaginatedTable
               data={auditLogs}
               pageSize={25}
-              keyExtractor={(log) => log.id}
+              keyExtractor={(log) => renderSafeMeta(log.id)}
               renderItem={(log) => (
                 <div className="border-b border-slate-800/60 p-3 hover:bg-slate-900/40">
                   <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${safeStr(log.action_type) === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : safeStr(log.action_type) === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
-                      {safeStr(log.action_type) === 'CREATE' ? <CheckCircle size={14} /> : safeStr(log.action_type) === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${renderSafeMeta(log.action_type) === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : renderSafeMeta(log.action_type) === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
+                      {renderSafeMeta(log.action_type) === 'CREATE' ? <CheckCircle size={14} /> : renderSafeMeta(log.action_type) === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-slate-300">
-                        <span className="font-bold text-white">{safeStr(log.user_name)}</span>
-                        {' '}<span className="text-slate-400">{safeStr(log.action_type)}</span> in <span className="text-purple-400 font-mono">{safeStr(log.module_name)}</span>
+                        <span className="font-bold text-white">{renderSafeMeta(log.user_name)}</span>
+                        {' '}<span className="text-slate-400">{renderSafeMeta(log.action_type)}</span> in <span className="text-purple-400 font-mono">{renderSafeMeta(log.module_name)}</span>
                       </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{safeStr(log.description) || '—'}</p>
-                      <p className="text-[10px] text-slate-600 mt-1">{safeStr(log.created_at).slice(0, 19)}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{renderSafeMeta(log.description) || '—'}</p>
+                      <p className="text-[10px] text-slate-600 mt-1">{renderSafeMeta(log.created_at).slice(0, 19)}</p>
                     </div>
                   </div>
                 </div>

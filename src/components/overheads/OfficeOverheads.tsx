@@ -5,7 +5,17 @@ import {
   fetchAssets, addAsset, updateAssetBookValue,
   calculateExpenseSummary, ExpenseRecord, AssetRecord,
 } from '../../services/overheads.service';
-import { safeStr } from '../../db/dbSanitizer';
+
+const renderSafeMeta = (val: unknown): string => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  if (typeof val === 'bigint') return val.toString();
+  if (typeof val === 'object') {
+    try { return JSON.stringify(val); } catch { return '[Complex Data]'; }
+  }
+  return String(val);
+};
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 
@@ -210,19 +220,19 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {pagedExpenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 text-slate-300">{safeStr(exp.date).slice(0, 10)}</td>
+                  <tr key={renderSafeMeta(exp.id)} className="hover:bg-slate-900/40">
+                    <td className="py-2.5 px-4 text-slate-300">{renderSafeMeta(exp.date).slice(0, 10)}</td>
                     <td className="py-2.5 px-4">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{safeStr(exp.category)}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{renderSafeMeta(exp.category)}</span>
                     </td>
-                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{safeStr(exp.description) || '—'}</td>
+                    <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{renderSafeMeta(exp.description) || '—'}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-rose-400 font-bold">{fmtNum(exp.amount)}</td>
                     <td className="py-2.5 px-4">
-                      {exp.recurring ? <span className="text-[10px] text-sky-400">{safeStr(exp.recurring_frequency)}</span> : <span className="text-[10px] text-slate-500">One-time</span>}
+                      {exp.recurring ? <span className="text-[10px] text-sky-400">{renderSafeMeta(exp.recurring_frequency)}</span> : <span className="text-[10px] text-slate-500">One-time</span>}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-400">{safeStr(exp.payment_method)}</td>
+                    <td className="py-2.5 px-4 text-slate-400">{renderSafeMeta(exp.payment_method)}</td>
                     <td className="py-2.5 px-4 text-right">
-                      <button onClick={() => handleDeleteExpense(exp.id)}
+                      <button onClick={() => handleDeleteExpense(renderSafeMeta(exp.id))}
                         className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded" title="Delete">
                         <Trash2 size={12} />
                       </button>
@@ -265,16 +275,16 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {assets.map((asset) => (
-                  <tr key={asset.id} className="hover:bg-slate-900/40">
+                  <tr key={renderSafeMeta(asset.id)} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4">
-                      <p className="font-medium text-white">{safeStr(asset.asset_name)}</p>
-                      <p className="text-[10px] text-slate-500">{safeStr(asset.category)} · {safeStr(asset.useful_life_years)}yr life</p>
+                      <p className="font-medium text-white">{renderSafeMeta(asset.asset_name)}</p>
+                      <p className="text-[10px] text-slate-500">{renderSafeMeta(asset.category)} · {renderSafeMeta(asset.useful_life_years)}yr life</p>
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-white">{fmtNum(asset.purchase_price)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-emerald-400">{fmtNum(asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-amber-400">{fmtNum(asset.purchase_price - asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-slate-400">{asset.depreciation_method === 'STRAIGHT_LINE' ? 'Straight Line' : 'Declining Balance'}</td>
-                    <td className="py-2.5 px-4 text-slate-300">{safeStr(asset.purchase_date).slice(0, 10)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{renderSafeMeta(asset.purchase_date).slice(0, 10)}</td>
                   </tr>
                 ))}
                 {assets.length === 0 && (

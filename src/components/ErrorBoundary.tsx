@@ -18,12 +18,21 @@ export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, error: null, errorInfo: null };
 
   static getDerivedStateFromError(error: unknown): Partial<State> {
-    return { hasError: true, error: error instanceof Error ? error : new Error(safeStr(error)) };
+    let normalized: Error;
+    if (error instanceof Error) {
+      normalized = error;
+    } else if (typeof error === 'string') {
+      normalized = new Error(error);
+    } else {
+      normalized = new Error(safeStr(error) || 'Unknown render error');
+    }
+    return { hasError: true, error: normalized };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    const errObj = error instanceof Error ? error : new Error(safeStr(error));
     this.setState({ errorInfo });
-    console.error(`[ErrorBoundary${this.props.module ? `:${this.props.module}` : ''}]`, error, errorInfo);
+    console.error(`[ErrorBoundary${this.props.module ? `:${this.props.module}` : ''}]`, errObj, errorInfo);
   }
 
   handleReload = () => {
@@ -37,7 +46,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const msg = safeStr(this.state.error?.message) || 'Unknown error';
-      const isStringError = msg.includes('replaceAll') || msg.includes('Cannot read propert') || msg.includes('objects are not valid');
+      const isStringError = msg.includes('replaceAll') || msg.includes('Cannot read propert') || msg.includes('objects are not valid') || msg.includes('Objects are not valid');
       return (
         <div className="flex items-center justify-center min-h-[400px] p-6">
           <div className="bg-slate-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full text-center space-y-4">
