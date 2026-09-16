@@ -41,6 +41,10 @@ interface WebApi {
   openCashSession: (branchId: string, openingBalance: number, userId: string, userName: string) => Promise<DatabaseResponse>;
   closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string) => Promise<DatabaseResponse>;
   openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
+  selectDirectory: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
+  saveImage: (name: string, base64Data: string) => Promise<{ success: boolean; path?: string; filename?: string; error?: string }>;
+  getSyncStatus: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }>;
+  forceSync: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }>;
 }
 
 const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || '';
@@ -656,6 +660,73 @@ function initWebApi(): WebApi {
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
+    },
+
+    selectDirectory: async (): Promise<{ success: boolean; path?: string; canceled?: boolean }> => {
+      // Web mode: use File System Access API if available
+      try {
+        if ('showDirectoryPicker' in window) {
+          const dirHandle = await (window as any).showDirectoryPicker();
+          return { success: true, path: dirHandle.name };
+        }
+        // Fallback: let user type path manually
+        const path = prompt('Enter local database directory path:');
+        if (path) {
+          return { success: true, path };
+        }
+        return { success: false, canceled: true };
+      } catch {
+        return { success: false, canceled: true };
+      }
+    },
+
+    // Image storage: uses IndexedDB for web mode (no filesystem access)
+    saveImage: async (name: string, base64Data: string): Promise<{ success: boolean; path?: string; filename?: string; error?: string }> => {
+      try {
+        if (!base64Data || !name) {
+          return { success: false, error: 'Missing name or image data' };
+        }
+        const IMAGE_DB_NAME = 'dripp_images';
+        const IMAGE_STORE = 'images';
+        const imgDb = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open(IMAGE_DB_NAME, 1);
+          req.onupgradeneeded = (e) => {
+            const db = (e.target as IDBOpenDBRequest).result;
+            if (!db.objectStoreNames.contains(IMAGE_STORE)) {
+              db.createObjectStore(IMAGE_STORE, { keyPath: 'id' });
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        const filename = `${name}_${Date.now()}.jpg`;
+        await new Promise<void>((resolve, reject) => {
+          const tx = imgDb.transaction(IMAGE_STORE, 'readwrite');
+          tx.objectStore(IMAGE_STORE).put({ id: filename, data: base64Data, name });
+          tx.oncomplete = () => { imgDb.close(); resolve(); };
+          tx.onerror = () => { imgDb.close(); reject(tx.error); };
+        });
+        // Return the base64 data URL as the "path" so <img src={path}> works in web mode
+        return { success: true, path: base64Data, filename };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+
+    getSyncStatus: async (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }> => {
+      const queued = await getAllQueuedWrites();
+      return {
+        success: true,
+        data: { isOnline: webIsOnline, lastSyncTime: lastWebSyncTime, syncInProgress: false, queuedWrites: queued.length, localDbPath: 'Turso HTTP (Web Mode)' },
+      };
+    },
+
+    forceSync: async (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }> => {
+      if (!webIsOnline) return { success: false, error: 'Offline — cannot sync' };
+      await flushWebOfflineQueue();
+      const queued = await getAllQueuedWrites();
+      lastWebSyncTime = new Date().toISOString();
+      return { success: true, data: { isOnline: true, lastSyncTime: lastWebSyncTime, queuedWrites: queued.length } };
     },
   };
 }
