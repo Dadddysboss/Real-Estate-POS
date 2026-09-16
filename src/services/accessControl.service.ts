@@ -49,6 +49,15 @@ export async function addStaff(
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to add staff');
 
+  // Verify the insert actually persisted (guards against offline queue silently swallowing the write)
+  const verifyRes: DatabaseResponse<any[]> = await window.api.dbQuery(
+    `SELECT id, username FROM staff_users WHERE id = ? LIMIT 1`, [id]
+  );
+  if (!verifyRes.success || !verifyRes.data || verifyRes.data.length === 0) {
+    throw new Error('Staff insert appeared to succeed but verification failed — row not found. The database may be offline or the write was queued.');
+  }
+  console.log(`[AccessControl] Verified staff insert: id=${id}, username=${verifyRes.data[0].username}`);
+
   await queueMutation('INSERT', 'staff_users', { id, ...payload });
   await logAudit({
     userId, userName, actionType: 'CREATE', moduleName: 'ACCESS_CONTROL',

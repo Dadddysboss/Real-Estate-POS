@@ -22,6 +22,9 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<LandAcquisition | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imagePreview, setImagePreview] = useState('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Form state
   const [sellerName, setSellerName] = useState('');
@@ -61,6 +64,20 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
     setAdvancePaid(0);
     setAcquisitionDate(new Date().toISOString().split('T')[0]);
     setDocUrl('');
+    setImageUrl('');
+    setImagePreview('');
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      setImagePreview(result);
+      setImageUrl(result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSave = async () => {
@@ -69,6 +86,16 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
       return;
     }
     try {
+      let savedImageUrl = imageUrl;
+      if (imageUrl && imageUrl.startsWith('data:image')) {
+        const imgRes = await window.api.saveImage(
+          `acq_${sellerName || 'untitled'}`,
+          imageUrl
+        );
+        if (imgRes.success && imgRes.path) {
+          savedImageUrl = imgRes.path;
+        }
+      }
       const payload = {
         seller_name: sellerName.trim(),
         seller_phone: sellerPhone.trim(),
@@ -78,6 +105,7 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
         advance_paid: advancePaid,
         acquisition_date: acquisitionDate,
         registry_doc_url: docUrl.trim() || null,
+        image_url: savedImageUrl,
       };
       if (editing) {
         await updateAcquisition(editing.id, currentUser.id, currentUser.fullName, payload, editing);
@@ -116,6 +144,8 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
     setAdvancePaid(acq.advance_paid);
     setAcquisitionDate(acq.acquisition_date);
     setDocUrl(acq.registry_doc_url || '');
+    setImageUrl((acq as any).image_url || '');
+    setImagePreview('');
     setShowForm(true);
   };
 
@@ -203,6 +233,15 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
             const fullyPaid = isFullyPaid(acq);
             return (
               <div key={acq.id} className="glass-card p-5">
+                {(acq as any).image_url && (
+                  <div className="w-full h-40 rounded-xl overflow-hidden border border-slate-800 mb-4">
+                    <img
+                      src={(acq as any).image_url?.startsWith('C:') || (acq as any).image_url?.startsWith('/') ? `file:///${(acq as any).image_url}` : (acq as any).image_url}
+                      alt={`Acquisition ${acq.land_title_khata}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -322,6 +361,43 @@ export const LandAcquisitions: React.FC<LandAcquisitionsProps> = ({ currentUser 
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Registry Document URL</label>
                 <input type="text" value={docUrl} onChange={(e) => setDocUrl(e.target.value)} className="input-base" placeholder="Optional link or path" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Land Image</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs border border-slate-700"
+                  >
+                    Choose Image
+                  </button>
+                  {imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => { setImageUrl(''); setImagePreview(''); }}
+                      className="px-3 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 rounded-xl text-xs"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {(imagePreview || imageUrl) && (
+                  <div className="mt-3 relative w-32 h-32 rounded-xl overflow-hidden border border-slate-700">
+                    <img
+                      src={imagePreview || (imageUrl.startsWith('C:') || imageUrl.startsWith('/') ? `file://${imageUrl}` : imageUrl)}
+                      alt="Land preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-800">

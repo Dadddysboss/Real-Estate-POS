@@ -21,15 +21,26 @@ interface AuthResponse {
   error?: string;
 }
 
+interface OfflineQueueItem {
+  id: string;
+  sql: string;
+  args: unknown[];
+  timestamp: number;
+}
+
 interface WebApi {
   dbExecute: (sql: string, args?: unknown[]) => Promise<DatabaseResponse>;
   dbQuery: <T = unknown>(sql: string, args?: unknown[]) => Promise<DatabaseResponse<T[]>>;
   authenticate: (username: string, pin: string) => Promise<AuthResponse>;
   onSyncStatusUpdate: (callback: (status: string) => void) => void;
+  getNetworkStatus: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }>;
+  onNetworkStatusChange: (callback: (isOnline: boolean) => void) => void;
+  subscribeToSyncUpdates: () => void;
   printReceipt: (receiptText: string) => Promise<DatabaseResponse>;
   getCashSessions: (branchId: string) => Promise<DatabaseResponse>;
   openCashSession: (branchId: string, openingBalance: number, userId: string, userName: string) => Promise<DatabaseResponse>;
   closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string) => Promise<DatabaseResponse>;
+  openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const TURSO_DB_URL = import.meta.env.VITE_TURSO_DATABASE_URL || '';
@@ -37,6 +48,106 @@ const TURSO_AUTH_TOKEN = import.meta.env.VITE_TURSO_AUTH_TOKEN || '';
 
 if (!TURSO_DB_URL || !TURSO_AUTH_TOKEN) {
   console.error('[Web] CRITICAL: VITE_TURSO_DATABASE_URL or VITE_TURSO_AUTH_TOKEN not set. Configure .env file.');
+}
+
+// ── IndexedDB Offline Queue (survives page reloads) ──
+const DB_NAME = 'dripp_offline_queue';
+const STORE_NAME = 'pending_writes';
+const QUEUE_DB_VERSION = 1;
+
+function openQueueDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, QUEUE_DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function queueWriteToIndexedDB(item: OfflineQueueItem): Promise<void> {
+  const db = await openQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(item);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+async function getAllQueuedWrites(): Promise<OfflineQueueItem[]> {
+  const db = await openQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const request = tx.objectStore(STORE_NAME).getAll();
+    request.onsuccess = () => { db.close(); resolve(request.result || []); };
+    request.onerror = () => { db.close(); reject(request.error); };
+  });
+}
+
+async function removeQueuedWrite(id: string): Promise<void> {
+  const db = await openQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+
+// ── Network Status (Web) ──
+let webIsOnline = navigator.onLine;
+let lastWebSyncTime: string | null = null;
+const networkStatusCallbacks: ((isOnline: boolean) => void)[] = [];
+
+function updateWebOnlineStatus(status: boolean) {
+  if (webIsOnline !== status) {
+    webIsOnline = status;
+    console.log(`[Web] Network status: ${status ? 'ONLINE' : 'OFFLINE'}`);
+    networkStatusCallbacks.forEach(cb => {
+      try { cb(status); } catch { /* best effort */ }
+    });
+    if (status) {
+      flushWebOfflineQueue().catch(() => {});
+    }
+  }
+}
+
+window.addEventListener('online', () => updateWebOnlineStatus(true));
+window.addEventListener('offline', () => updateWebOnlineStatus(false));
+
+// ── Flush Offline Queue on Connectivity ──
+async function flushWebOfflineQueue(): Promise<void> {
+  if (!webIsOnline) return;
+  const queued = await getAllQueuedWrites();
+  if (queued.length === 0) return;
+  console.log(`[Web] Flushing ${queued.length} queued offline writes...`);
+
+  const remaining: OfflineQueueItem[] = [];
+  for (const item of queued) {
+    try {
+      await tursoExecute(item.sql, item.args);
+      await removeQueuedWrite(item.id);
+    } catch (err) {
+      console.error('[Web] Failed to flush queued write:', item.sql.substring(0, 60), err);
+      // Drop items older than 24 hours
+      if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+        remaining.push(item);
+      } else {
+        await removeQueuedWrite(item.id);
+      }
+    }
+  }
+  if (remaining.length === 0) {
+    console.log('[Web] All queued writes flushed successfully');
+    lastWebSyncTime = new Date().toISOString();
+  } else {
+    console.warn(`[Web] ${remaining.length} writes still queued`);
+  }
 }
 
 async function tursoExecuteMulti(requests: { sql: string; args?: unknown[] }[]): Promise<{ rows: Record<string, unknown>[] }> {
@@ -336,6 +447,19 @@ function initWebApi(): WebApi {
         return { success: true, data: result };
       } catch (err) {
         console.error('[Web DB Execute Error]', err);
+        // Queue ALL failed writes for offline replay
+        const isWrite = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(sql);
+        if (isWrite) {
+          const item: OfflineQueueItem = {
+            id: `OFF_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+            sql,
+            args,
+            timestamp: Date.now(),
+          };
+          await queueWriteToIndexedDB(item);
+          console.log(`[Web] Write queued offline: ${sql.substring(0, 60)}`);
+          return { success: true, data: { rows: [] } };
+        }
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
@@ -346,7 +470,8 @@ function initWebApi(): WebApi {
         return { success: true, data: result.rows as unknown as T[] };
       } catch (err) {
         console.error('[Web DB Query Error]', err);
-        return { success: false, error: err instanceof Error ? err.message : String(err) };
+        // Queries return empty results when offline (never crash)
+        return { success: true, data: [] as unknown as T[] };
       }
     },
 
@@ -497,6 +622,41 @@ function initWebApi(): WebApi {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
+
+    getNetworkStatus: async (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }> => {
+      const queued = await getAllQueuedWrites();
+      return {
+        success: true,
+        data: { isOnline: webIsOnline, lastSyncTime: lastWebSyncTime, queuedWrites: queued.length },
+      };
+    },
+
+    onNetworkStatusChange: (callback: (isOnline: boolean) => void) => {
+      networkStatusCallbacks.push(callback);
+      // Fire immediately with current status
+      try { callback(webIsOnline); } catch { /* best effort */ }
+    },
+
+    subscribeToSyncUpdates: () => {
+      // Trigger initial flush check
+      if (webIsOnline) {
+        flushWebOfflineQueue().catch(() => {});
+      }
+    },
+
+    openExternalUrl: async (url: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const safeUrl = (url || '').trim();
+        if (!safeUrl) return { success: false, error: 'Empty URL' };
+        if (safeUrl.startsWith('http://') || safeUrl.startsWith('https://') || safeUrl.startsWith('mailto:')) {
+          window.open(safeUrl, '_blank');
+          return { success: true };
+        }
+        return { success: false, error: 'Only http/https/mailto URLs are allowed' };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
   };
 }
 
@@ -505,5 +665,9 @@ export function initWebDatabase(): void {
     (window as unknown as Record<string, unknown>).api = initWebApi();
     console.log('[Web] Turso HTTP adapter initialized for browser mode');
     autoSeedDatabase();
+    // Flush any queued offline writes from previous sessions
+    if (navigator.onLine) {
+      flushWebOfflineQueue().catch(() => {});
+    }
   }
 }

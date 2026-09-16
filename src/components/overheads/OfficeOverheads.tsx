@@ -79,7 +79,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       setMessage({ type: 'success', text: 'Expense recorded' });
       setShowExpenseForm(false);
       setExpenseAmount(0); setExpenseDescription('');
-      await loadData();
+      const expData = await fetchExpenses();
+      setExpenses(expData);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record expense' });
     }
@@ -90,7 +91,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
     try {
       await deleteExpense(expId, currentUser.id, currentUser.fullName, `Expense ${expId}`);
       setMessage({ type: 'success', text: 'Expense deleted' });
-      await loadData();
+      const expData = await fetchExpenses();
+      setExpenses(expData);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to delete' });
     }
@@ -114,7 +116,8 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       setMessage({ type: 'success', text: 'Asset added' });
       setShowAssetForm(false);
       setAssetName(''); setAssetPrice(0); setSalvageValue(0);
-      await loadData();
+      const assetData = await fetchAssets();
+      setAssets(assetData);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to add asset' });
     }

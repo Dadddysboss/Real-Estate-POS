@@ -35,9 +35,10 @@ interface AgencySettings {
 interface SettingsProps {
   branchId: string;
   onBranchChange: (branchId: string) => void;
+  onSettingsChange?: () => void;
 }
 
-export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) => {
+export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange, onSettingsChange }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'branches' | 'backup' | 'security' | 'appearance'>('general');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -62,6 +63,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
   const [sqliteDbPath, setSqliteDbPath] = useState<string>('');
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   const [backupInProgress, setBackupInProgress] = useState(false);
+  const [customDbDir, setCustomDbDir] = useState<string>('');
 
   // Security
   const [sessionTimeout, setSessionTimeout] = useState(30);
@@ -107,6 +109,13 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
       if (dbPathRes.success && dbPathRes.data?.[0]) {
         setSqliteDbPath(dbPathRes.data[0].setting_value);
       }
+      // Load custom DB directory
+      const customDbDirRes = await window.api.dbQuery<{ setting_value: string }>(
+        `SELECT setting_value FROM system_settings WHERE setting_key = 'custom_db_directory'`, []
+      );
+      if (customDbDirRes.success && customDbDirRes.data?.[0]) {
+        setCustomDbDir(customDbDirRes.data[0].setting_value);
+      }
       // Load branches
       const branchesRes = await window.api.dbQuery<Branch>('SELECT * FROM branches WHERE status = ? ORDER BY branch_name', ['ACTIVE']);
       if (branchesRes.success && branchesRes.data) {
@@ -150,8 +159,9 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
   useEffect(() => {
     loadSettings();
     // Listen for auto-update events (Electron only)
+    const cleanups: (() => void)[] = [];
     if (window.api?.onUpdateStatus) {
-      window.api.onUpdateStatus((status: string, info?: string) => {
+      cleanups.push(window.api.onUpdateStatus((status: string, info?: string) => {
         switch (status) {
           case 'checking': setUpdateStatus('checking'); break;
           case 'available': setUpdateStatus('available'); setUpdateVersion(info || null); break;
@@ -159,14 +169,15 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
           case 'downloaded': setUpdateStatus('downloaded'); break;
           case 'error': setUpdateStatus('error'); setUpdateError(info || 'Unknown error'); break;
         }
-      });
+      }));
     }
     if (window.api?.onUpdateProgress) {
-      window.api.onUpdateProgress((percent: number) => {
+      cleanups.push(window.api.onUpdateProgress((percent: number) => {
         setUpdateProgress(percent);
         setUpdateStatus('downloading');
-      });
+      }));
     }
+    return () => { cleanups.forEach((fn) => fn()); };
   }, []);
 
   const handleCheckForUpdate = async () => {
@@ -227,6 +238,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
         );
       }
       setMessage({ type: 'success', text: 'Settings saved successfully' });
+      if (onSettingsChange) onSettingsChange();
     } catch (error) {
       console.error('Save settings error:', error);
       setMessage({ type: 'error', text: 'Failed to save settings' });
@@ -359,6 +371,7 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
       }
       setShowBranchModal(false);
       loadSettings();
+      if (onSettingsChange) onSettingsChange();
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to save branch' });
     }
@@ -467,6 +480,8 @@ export const Settings: React.FC<SettingsProps> = ({ branchId, onBranchChange }) 
             updateError={updateError}
             onCheckForUpdate={handleCheckForUpdate}
             onInstallUpdate={handleInstallUpdate}
+            customDbDir={customDbDir}
+            onCustomDbDirChange={(path: string) => setCustomDbDir(path)}
           />
         )}
 
@@ -890,6 +905,8 @@ function BackupTab({
   updateError,
   onCheckForUpdate,
   onInstallUpdate,
+  customDbDir,
+  onCustomDbDirChange,
 }: {
   backupFolder: string | null;
   onBackupFolderSelect: () => void;
@@ -903,6 +920,8 @@ function BackupTab({
   updateError: string | null;
   onCheckForUpdate: () => void;
   onInstallUpdate: () => void;
+  customDbDir: string;
+  onCustomDbDirChange: (path: string) => void;
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
@@ -938,6 +957,44 @@ function BackupTab({
           </div>
           <p className="text-xs text-slate-500">
             Desktop App stores data in a local SQLite file for offline-first access. Synced to Turso Cloud when online.
+          </p>
+        </div>
+      </div>
+
+      {/* Custom Database Directory */}
+      <div className="glass-card p-6">
+        <h4 className="text-sm font-bold text-slate-300 mb-4">Custom Database Directory</h4>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 bg-slate-950 border border-slate-800 rounded-xl">
+            <div className="flex items-center space-x-3">
+              <Database className="text-purple-400" size={20} />
+              <div>
+                <p className="font-medium text-white">SQLite Database Location</p>
+                <p className="text-xs text-slate-400 font-mono truncate max-w-xs">
+                  {customDbDir || 'Default: %APPDATA%/dripp-erp/'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                if (window.api?.selectDirectory) {
+                  const result = await window.api.selectDirectory();
+                  if (result.success && result.path) {
+                    onCustomDbDirChange(result.path);
+                    await window.api.dbExecute(
+                      `INSERT INTO system_settings (setting_key, setting_value, updated_at) VALUES ('custom_db_directory', ?, datetime('now')) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = datetime('now')`,
+                      [result.path]
+                    );
+                  }
+                }
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-xl text-sm transition-all"
+            >
+              {customDbDir ? 'Change Directory' : 'Select Directory'}
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Choose a custom location for the local SQLite database file. A restart is required after changing.
           </p>
         </div>
       </div>

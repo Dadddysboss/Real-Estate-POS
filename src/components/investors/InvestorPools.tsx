@@ -66,8 +66,8 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
   const [payoutMode, setPayoutMode] = useState('CASH');
   const [payoutNotes, setPayoutNotes] = useState('');
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const poolsData = await fetchPools();
       setPools(poolsData);
@@ -132,7 +132,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       setMessage({ type: 'success', text: 'Pool created successfully' });
       setShowPoolForm(false);
       resetPoolForm();
-      await loadData();
+      await loadData(true);
     } catch (err) {
       setMessage({ type: 'error', text: `Failed to create pool: ${err instanceof Error ? err.message : 'Database error'}` });
     }
@@ -144,7 +144,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       await deletePool(poolId, currentUser.id, currentUser.fullName, poolName);
       setMessage({ type: 'success', text: 'Pool deleted' });
       setSelectedPool(null);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to delete pool' });
     }
@@ -169,7 +169,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       setInvName(''); setInvPhone(''); setInvCnic('');
       setInvAmount(0); setInvEquity(0);
       await loadPoolData(selectedPool.id);
-      await loadData();
+      await loadData(true);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to add investor' });
     }
@@ -182,7 +182,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
       setMessage({ type: 'success', text: 'Investor removed' });
       if (selectedPool) {
         await loadPoolData(selectedPool.id);
-        await loadData();
+        await loadData(true);
       }
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to remove investor' });
@@ -245,7 +245,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
           <p className="text-sm text-slate-400">Module 13 — Track pools, equity %, auto-dividend distribution</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={loadData}
+          <button onClick={() => loadData()}
             className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs transition">
             <RefreshCw size={14} /> Refresh
           </button>

@@ -64,7 +64,19 @@ contextBridge.exposeInMainWorld('api', {
   },
   // System Sync Listener
   onSyncStatusUpdate: (callback: (status: string) => void) => {
-    ipcRenderer.on('sync:status-change', (_event, status) => callback(status));
+    const handler = (_event: Electron.IpcRendererEvent, status: string) => callback(status);
+    ipcRenderer.on('sync:status-change', handler);
+    return () => { ipcRenderer.removeListener('sync:status-change', handler); };
+  },
+  // Network Status
+  getNetworkStatus: (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }> => {
+    return ipcRenderer.invoke('network:status');
+  },
+  onNetworkStatusChange: (callback: (isOnline: boolean) => void) => {
+    ipcRenderer.on('network:status-change', (_event, isOnline) => callback(isOnline));
+  },
+  subscribeToSyncUpdates: (): void => {
+    ipcRenderer.send('network:subscribe');
   },
   // Print Receipt IPC (80mm thermal)
   printReceipt: (receiptText: string): Promise<DatabaseResponse> => {
@@ -92,10 +104,22 @@ contextBridge.exposeInMainWorld('api', {
     return ipcRenderer.invoke('update:install');
   },
   onUpdateStatus: (callback: (status: string, info?: string) => void) => {
-    ipcRenderer.on('update:status', (_event, status, info) => callback(status, info));
+    const handler = (_event: Electron.IpcRendererEvent, status: string, info?: string) => callback(status, info);
+    ipcRenderer.on('update:status', handler);
+    return () => { ipcRenderer.removeListener('update:status', handler); };
   },
   onUpdateProgress: (callback: (percent: number) => void) => {
-    ipcRenderer.on('update:progress', (_event, percent) => callback(percent));
+    const handler = (_event: Electron.IpcRendererEvent, percent: number) => callback(percent);
+    ipcRenderer.on('update:progress', handler);
+    return () => { ipcRenderer.removeListener('update:progress', handler); };
+  },
+  // Directory Picker
+  selectDirectory: (): Promise<{ success: boolean; path?: string; canceled?: boolean }> => {
+    return ipcRenderer.invoke('dialog:select-directory');
+  },
+  // Save Image (local file storage)
+  saveImage: (name: string, base64Data: string): Promise<{ success: boolean; path?: string; filename?: string; error?: string }> => {
+    return ipcRenderer.invoke('save-image', { name, base64Data });
   },
   // Sync Status & Manual Sync
   getSyncStatus: (): Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }> => {

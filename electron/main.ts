@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import bcrypt from 'bcryptjs';
@@ -47,8 +47,36 @@ let db: Client;
 let isOnline = false;
 let lastSyncTime: string | null = null;
 let syncInProgress = false;
+let mainWindowRef: BrowserWindow | null = null;
 
-const offlineQueue: { sql: string; args: unknown[]; timestamp: number }[] = [];
+// ── Network Detection ──
+function checkNetworkConnectivity(): boolean {
+  try {
+    return net.isOnline();
+  } catch {
+    return false;
+  }
+}
+
+function updateOnlineStatus(status: boolean) {
+  if (isOnline !== status) {
+    isOnline = status;
+    logToFile(`[Network] Status changed: ${status ? 'ONLINE' : 'OFFLINE'}`);
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      mainWindowRef.webContents.send('network:status-change', status);
+    }
+  }
+}
+
+// ── Offline Write Queue (file-persisted, survives crashes) ──
+interface OfflineQueueItem {
+  sql: string;
+  args: unknown[];
+  timestamp: number;
+  id: string;
+}
+
+const offlineQueue: OfflineQueueItem[] = [];
 const OFFLINE_QUEUE_FILE = path.join(app.getPath('userData'), 'offline_queue.json');
 
 function loadOfflineQueue() {
@@ -57,7 +85,7 @@ function loadOfflineQueue() {
       const data = fs.readFileSync(OFFLINE_QUEUE_FILE, 'utf-8');
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) offlineQueue.push(...parsed);
-      console.log(`[Desktop] Loaded ${offlineQueue.length} queued offline writes`);
+      logToFile(`[Desktop] Loaded ${offlineQueue.length} queued offline writes`);
     }
   } catch { /* best effort */ }
 }
@@ -66,6 +94,26 @@ function saveOfflineQueue() {
   try {
     fs.writeFileSync(OFFLINE_QUEUE_FILE, JSON.stringify(offlineQueue, null, 2), 'utf-8');
   } catch { /* best effort */ }
+}
+
+function queueWriteOffline(sql: string, args: unknown[]) {
+  const item: OfflineQueueItem = {
+    sql,
+    args,
+    timestamp: Date.now(),
+    id: `OFF_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
+  };
+  offlineQueue.push(item);
+  saveOfflineQueue();
+  logToFile(`[Offline Queue] Queued write: ${sql.substring(0, 80)} (queue size: ${offlineQueue.length})`);
+
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send('sync:status-change', {
+      isOnline,
+      queuedWrites: offlineQueue.length,
+      lastSyncTime,
+    });
+  }
 }
 
 function initDatabase() {
@@ -86,13 +134,26 @@ async function syncDatabase() {
   if (syncInProgress) return;
   syncInProgress = true;
   try {
+    // Update online status before attempting sync
+    updateOnlineStatus(checkNetworkConnectivity());
+
     await db.sync();
-    isOnline = true;
+    updateOnlineStatus(true);
     lastSyncTime = new Date().toISOString();
-    console.log('[Desktop] DB sync completed');
+    logToFile('[Desktop] DB sync completed');
+
+    // Notify renderer of successful sync
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      mainWindowRef.webContents.send('sync:status-change', {
+        isOnline: true,
+        lastSyncTime,
+        queuedWrites: offlineQueue.length,
+      });
+    }
   } catch (err) {
-    isOnline = false;
+    updateOnlineStatus(false);
     console.warn('[Desktop] DB sync failed (offline?):', err instanceof Error ? err.message : String(err));
+    logToFile(`[Desktop] DB sync failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     syncInProgress = false;
   }
@@ -100,23 +161,36 @@ async function syncDatabase() {
 
 async function flushOfflineQueue() {
   if (offlineQueue.length === 0) return;
-  console.log(`[Desktop] Flushing ${offlineQueue.length} queued writes...`);
-  const remaining: typeof offlineQueue = [];
+  logToFile(`[Desktop] Flushing ${offlineQueue.length} queued writes...`);
+  const remaining: OfflineQueueItem[] = [];
   for (const item of offlineQueue) {
     try {
       await db.execute({ sql: item.sql, args: item.args as any[] });
     } catch (err) {
       console.error('[Desktop] Failed to flush queued write:', item.sql.substring(0, 60), err);
-      remaining.push(item);
+      // Only keep items that haven't exceeded max retries (24 hours worth of attempts)
+      if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+        remaining.push(item);
+      } else {
+        logToFile(`[Desktop] Dropping stale queued write (>24h): ${item.sql.substring(0, 60)}`);
+      }
     }
   }
   offlineQueue.length = 0;
   offlineQueue.push(...remaining);
   saveOfflineQueue();
   if (remaining.length === 0) {
-    console.log('[Desktop] All queued writes flushed successfully');
+    logToFile('[Desktop] All queued writes flushed successfully');
   } else {
-    console.warn(`[Desktop] ${remaining.length} writes still queued`);
+    logToFile(`[Desktop] ${remaining.length} writes still queued`);
+  }
+
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send('sync:status-change', {
+      isOnline,
+      lastSyncTime,
+      queuedWrites: offlineQueue.length,
+    });
   }
 }
 
@@ -124,7 +198,7 @@ async function dbExecute(sql: string, args: unknown[] = []): Promise<{ rows: Rec
   const isWrite = /^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP)\b/i.test(sql);
   try {
     const result = await db.execute({ sql, args: args as any[] });
-    isOnline = true;
+    updateOnlineStatus(true);
     if (isWrite) syncDatabase().catch(() => {});
     return {
       rows: result.rows.map(row => {
@@ -134,10 +208,10 @@ async function dbExecute(sql: string, args: unknown[] = []): Promise<{ rows: Rec
       }),
     };
   } catch (err) {
-    if (isWrite && !isOnline) {
-      offlineQueue.push({ sql, args, timestamp: Date.now() });
-      saveOfflineQueue();
-      console.log(`[Desktop] Write queued offline: ${sql.substring(0, 60)}`);
+    // Queue ALL failed writes offline — not just when isOnline=false
+    // This ensures data is never lost even if the connection drops mid-operation
+    if (isWrite) {
+      queueWriteOffline(sql, args);
       return { rows: [] };
     }
     throw err;
@@ -213,6 +287,8 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     logToFile(`[Desktop] did-fail-load: code=${errorCode} desc=${errorDescription}`);
   });
+
+  mainWindowRef = mainWindow;
 }
 
 function printReceiptText(receiptText: string): Promise<void> {
@@ -427,6 +503,9 @@ async function initializeDatabase() {
       "ALTER TABLE branch_sync_queue ADD COLUMN target_branch_id TEXT",
       "ALTER TABLE branch_sync_queue ADD COLUMN table_name TEXT",
       "ALTER TABLE branch_sync_queue ADD COLUMN record_id TEXT",
+      // Plot & acquisition image support
+      "ALTER TABLE inventory_plots ADD COLUMN image_url TEXT DEFAULT ''",
+      "ALTER TABLE land_acquisitions ADD COLUMN image_url TEXT DEFAULT ''",
     ];
     for (const migration of alterMigrations) {
       try { await dbExecute(migration); } catch { /* column already exists */ }
@@ -472,6 +551,13 @@ async function initializeDatabase() {
 app.whenReady().then(async () => {
   logToFile('[Desktop] app.whenReady fired');
 
+  // Initialize network status
+  updateOnlineStatus(checkNetworkConnectivity());
+  // Poll network status periodically (Electron 'net' module doesn't emit events in all versions)
+  setInterval(() => {
+    updateOnlineStatus(checkNetworkConnectivity());
+  }, 10_000);
+
   try {
     logToFile('[Desktop] Initializing embedded replica database...');
     initDatabase();
@@ -481,10 +567,10 @@ app.whenReady().then(async () => {
     logToFile('[Desktop] Database initialized and synced successfully');
 
     // Periodic sync every 30 seconds
-    setInterval(() => {
-      syncDatabase().then(() => {
-        if (isOnline) flushOfflineQueue();
-      }).catch(() => {});
+    setInterval(async () => {
+      updateOnlineStatus(checkNetworkConnectivity());
+      await syncDatabase();
+      if (isOnline) await flushOfflineQueue();
     }, 30_000);
   } catch (err: any) {
     logToFile(`[Desktop] DB init failed: ${err.message || String(err)}`);
@@ -544,22 +630,41 @@ app.whenReady().then(async () => {
 
       // Try staff_users table FIRST (bcrypt-hashed passwords)
       let result = await dbExecute(
-        'SELECT id, username, full_name, role, password_hash FROM staff_users WHERE LOWER(username) = ? AND is_active = 1 LIMIT 1',
+        'SELECT id, username, full_name, role, TRIM(password_hash) AS password_hash FROM staff_users WHERE LOWER(username) = ? AND is_active = 1 LIMIT 1',
         [cleanUser]
       );
       let isStaffUser = result.rows.length > 0;
 
       if (isStaffUser) {
-        console.log(`[Desktop Auth] Found staff user: ${result.rows[0].username}`);
         const user = result.rows[0];
         const storedPassword = String(user.password_hash || '').trim();
-        const passwordValid = await bcrypt.compare(cleanPin, storedPassword);
-        console.log(`[Desktop Auth] Staff password valid: ${passwordValid}`);
+        console.log(`[Desktop Auth] Found staff user: ${user.username}, hash_prefix="${storedPassword.substring(0, 7)}", hash_len=${storedPassword.length}`);
+
+        let passwordValid = false;
+
+        // bcrypt hash always starts with $2a$ or $2b$ — check prefix first
+        const isBcryptHash = /^\$2[ab]\$/.test(storedPassword);
+
+        if (isBcryptHash) {
+          passwordValid = await bcrypt.compare(cleanPin, storedPassword);
+          console.log(`[Desktop Auth] bcrypt compare result: ${passwordValid}`);
+        } else {
+          console.log(`[Desktop Auth] Stored hash does not look like bcrypt — trying direct comparison`);
+          passwordValid = storedPassword === cleanPin;
+        }
+
+        // Fallback: if bcrypt failed but stored value might be plaintext
+        if (!passwordValid && !isBcryptHash) {
+          console.log(`[Desktop Auth] Plaintext fallback comparison`);
+          passwordValid = storedPassword === cleanPin;
+        }
 
         if (!passwordValid) {
+          console.log(`[Desktop Auth] Staff login FAILED for user="${cleanUser}"`);
           return { success: false, error: 'Invalid username or password.' };
         }
 
+        console.log(`[Desktop Auth] Staff login SUCCESS for user="${user.username}" role="${user.role}"`);
         return {
           success: true,
           data: {
@@ -612,6 +717,17 @@ app.whenReady().then(async () => {
     }
   });
 
+  ipcMain.handle('dialog:select-directory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory'],
+      title: 'Select Database Directory',
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    return { success: true, path: result.filePaths[0] };
+  });
+
   ipcMain.handle('print:receipt', async (_event, receiptText: string) => {
     try {
       await printReceiptText(receiptText);
@@ -619,6 +735,20 @@ app.whenReady().then(async () => {
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
+  });
+
+  // ─── Network Status ───
+  ipcMain.handle('network:status', async () => {
+    updateOnlineStatus(checkNetworkConnectivity());
+    return {
+      success: true,
+      data: { isOnline, lastSyncTime, queuedWrites: offlineQueue.length },
+    };
+  });
+
+  ipcMain.on('network:subscribe', (event) => {
+    // Send current status immediately
+    event.sender.send('network:status-change', isOnline);
   });
 
   // ─── Sync Status & Manual Sync ───
@@ -702,6 +832,21 @@ app.whenReady().then(async () => {
         return { success: true };
       }
       return { success: false, error: 'Only http/https/mailto URLs are allowed' };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // ─── Save Image (local file) ───
+  ipcMain.handle('save-image', async (_event, { name, base64Data }) => {
+    try {
+      const imagesDir = path.join(app.getPath('userData'), 'images');
+      if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
+      const filename = `${name}_${Date.now()}.jpg`;
+      const filepath = path.join(imagesDir, filename);
+      const data = base64Data.replace(/^data:image\/\w+;base64,/, '');
+      fs.writeFileSync(filepath, Buffer.from(data, 'base64'));
+      return { success: true, path: filepath, filename };
     } catch (err) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }

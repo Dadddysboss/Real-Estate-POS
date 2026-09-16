@@ -12,6 +12,7 @@ export interface AcquisitionPayload {
   advance_paid: number;
   acquisition_date: string;
   registry_doc_url: string | null;
+  image_url: string;
 }
 
 // ------------------------------------------------------------------
@@ -44,14 +45,14 @@ export async function createAcquisition(
     INSERT INTO land_acquisitions (
       id, seller_name, seller_phone, seller_cnic, land_title_khata,
       total_agreed_price, advance_paid, debt_remaining, acquisition_date,
-      registry_doc_url, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      registry_doc_url, image_url, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
     id, payload.seller_name, payload.seller_phone, payload.seller_cnic,
     payload.land_title_khata, Math.round(payload.total_agreed_price),
     Math.round(payload.advance_paid), Math.round(debtRemaining),
-    payload.acquisition_date, payload.registry_doc_url
+    payload.acquisition_date, payload.registry_doc_url, payload.image_url || ''
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to create acquisition');
 
@@ -77,14 +78,14 @@ export async function updateAcquisition(
     UPDATE land_acquisitions SET
       seller_name = ?, seller_phone = ?, seller_cnic = ?, land_title_khata = ?,
       total_agreed_price = ?, advance_paid = ?, debt_remaining = ?,
-      acquisition_date = ?, registry_doc_url = ?
+      acquisition_date = ?, registry_doc_url = ?, image_url = ?
     WHERE id = ?
   `;
   const res = await window.api.dbExecute(sql, [
     payload.seller_name, payload.seller_phone, payload.seller_cnic,
     payload.land_title_khata, Math.round(payload.total_agreed_price),
     Math.round(payload.advance_paid), Math.round(debtRemaining),
-    payload.acquisition_date, payload.registry_doc_url, id
+    payload.acquisition_date, payload.registry_doc_url, payload.image_url || '', id
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to update acquisition');
 

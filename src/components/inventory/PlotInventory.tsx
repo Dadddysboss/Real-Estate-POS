@@ -74,6 +74,7 @@ interface PlotFormState {
   gps_coordinates: string;
   status: PlotRecord['status'];
   notes: string;
+  image_url: string;
 }
 
 const SIZE_UNITS = ['Marla', 'Kanal', 'Murabba', 'Acre', 'Sqft', 'Sqyard'];
@@ -94,6 +95,7 @@ const emptyForm = (): PlotFormState => ({
   gps_coordinates: '',
   status: 'AVAILABLE',
   notes: '',
+  image_url: '',
 });
 
 const formToState = (p: PlotRecord): PlotFormState => ({
@@ -111,6 +113,7 @@ const formToState = (p: PlotRecord): PlotFormState => ({
   gps_coordinates: p.gps_coordinates || '',
   status: p.status,
   notes: p.notes || '',
+  image_url: (p as any).image_url || '',
 });
 
 export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentUser }) => {
@@ -129,6 +132,20 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
   const [selected, setSelected] = useState<PlotRecord | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<SalesDealRow | null>(null);
   const [showDealModal, setShowDealModal] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      setImagePreview(result);
+      setForm({ ...form, image_url: result });
+    };
+    reader.readAsDataURL(file);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -189,6 +206,16 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
     setSaving(true);
     setMessage(null);
     try {
+      let savedImageUrl = form.image_url;
+      if (form.image_url && form.image_url.startsWith('data:image')) {
+        const imgRes = await window.api.saveImage(
+          `plot_${form.plot_number || 'untitled'}`,
+          form.image_url
+        );
+        if (imgRes.success && imgRes.path) {
+          savedImageUrl = imgRes.path;
+        }
+      }
       const payload = {
         plot_number: form.plot_number.trim(),
         society_name: form.society_name.trim(),
@@ -205,6 +232,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         gps_coordinates: form.gps_coordinates.trim(),
         status: form.status,
         notes: form.notes.trim(),
+        image_url: savedImageUrl,
       };
       if (editing) {
         await updatePlot(editing.id, branchId, currentUser.id, currentUser.fullName, payload, editing);
@@ -251,6 +279,7 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
         gps_coordinates: plot.gps_coordinates || '',
         status,
         notes: plot.notes || '',
+        image_url: (plot as any).image_url || '',
       };
       await updatePlot(plot.id, branchId, currentUser.id, currentUser.fullName, payload, plot);
       setMessage({ type: 'success', text: `Status set to ${status.replace(/_/g, ' ')}.` });
@@ -369,6 +398,15 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                   {(plot.status ?? '').replace(/_/g, ' ')}
                 </span>
               </div>
+              {(plot as any).image_url && (
+                <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-800">
+                  <img
+                    src={(plot as any).image_url?.startsWith('C:') || (plot as any).image_url?.startsWith('/') ? `file:///${(plot as any).image_url}` : (plot as any).image_url}
+                    alt={`Plot ${plot.plot_number}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
               {parseFeatureTags(plot.feature_tags).length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {parseFeatureTags(plot.feature_tags).map((tag) => (
@@ -594,6 +632,43 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
                 <input type="text" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   className="input-base" placeholder="Internal remarks..." />
               </div>
+              <div className="sm:col-span-2">
+                <label className="text-xs text-slate-400 block mb-1">Plot Image</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs border border-slate-700"
+                  >
+                    Choose Image
+                  </button>
+                  {form.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => { setForm({ ...form, image_url: '' }); setImagePreview(''); }}
+                      className="px-3 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 rounded-xl text-xs"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {(imagePreview || form.image_url) && (
+                  <div className="mt-3 relative w-32 h-32 rounded-xl overflow-hidden border border-slate-700">
+                    <img
+                      src={imagePreview || (form.image_url.startsWith('C:') || form.image_url.startsWith('/') ? `file://${form.image_url}` : form.image_url)}
+                      alt="Plot preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-slate-800">
               <button onClick={() => setShowForm(false)} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs">Cancel</button>
@@ -617,6 +692,15 @@ export const PlotInventory: React.FC<PlotInventoryProps> = ({ branchId, currentU
               <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-4">
+              {(selected as any).image_url && (
+                <div className="w-full h-48 rounded-xl overflow-hidden border border-slate-800">
+                  <img
+                    src={(selected as any).image_url?.startsWith('C:') || (selected as any).image_url?.startsWith('/') ? `file:///${(selected as any).image_url}` : (selected as any).image_url}
+                    alt={`Plot ${selected.plot_number}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="bg-slate-950 rounded-xl p-3"><p className="text-slate-500">Category</p><p className="font-semibold text-white mt-0.5">{selected.category}</p></div>
                 <div className="bg-slate-950 rounded-xl p-3"><p className="text-slate-500">Size</p><p className="font-semibold text-white mt-0.5">{selected.size_dimension}</p></div>

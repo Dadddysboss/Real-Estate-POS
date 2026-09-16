@@ -6,17 +6,22 @@ declare global {
       dbExecute: (sql: string, args?: unknown[]) => Promise<DatabaseResponse>;
       dbQuery: <T = unknown>(sql: string, args?: unknown[]) => Promise<DatabaseResponse<T[]>>;
       authenticate: (username: string, pin: string) => Promise<AuthResponse>;
-      onSyncStatusUpdate: (callback: (status: string) => void) => void;
+      onSyncStatusUpdate: (callback: (status: string) => void) => () => void;
+      getNetworkStatus: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }>;
+      onNetworkStatusChange: (callback: (isOnline: boolean) => void) => void;
+      subscribeToSyncUpdates: () => void;
       printReceipt: (receiptText: string) => Promise<DatabaseResponse>;
       getCashSessions: (branchId: string) => Promise<DatabaseResponse<CashSessionData[]>>;
       openCashSession: (branchId: string, openingBalance: number, userId: string, userName: string) => Promise<DatabaseResponse<{ id: string }>>;
       closeCashSession: (sessionId: string, closingBalance: number, expectedBalance: number, variance: number, userId: string, userName: string) => Promise<DatabaseResponse<{ id: string }>>;
       checkForUpdates: () => Promise<{ success: boolean; updateInfo?: any; error?: string }>;
       installUpdate: () => Promise<{ success: boolean; error?: string }>;
-      onUpdateStatus: (callback: (status: string, info?: string) => void) => void;
-      onUpdateProgress: (callback: (percent: number) => void) => void;
+      onUpdateStatus: (callback: (status: string, info?: string) => void) => () => void;
+      onUpdateProgress: (callback: (percent: number) => void) => () => void;
+      selectDirectory: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
       getSyncStatus: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; syncInProgress: boolean; queuedWrites: number; localDbPath: string }; error?: string }>;
       forceSync: () => Promise<{ success: boolean; data?: { isOnline: boolean; lastSyncTime: string | null; queuedWrites: number }; error?: string }>;
+      saveImage: (name: string, base64Data: string) => Promise<{ success: boolean; path?: string; filename?: string; error?: string }>;
     };
   }
 }
@@ -64,6 +69,7 @@ export interface PlotRecord {
   gps_coordinates: string | null;
   status: 'AVAILABLE' | 'SOLD' | 'ON_HOLD' | 'UNDER_DEVELOPMENT' | 'BOOKED';
   notes: string | null;
+  image_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -388,5 +394,6 @@ export interface LandAcquisition {
   debt_remaining: number;
   acquisition_date: string;
   registry_doc_url: string | null;
+  image_url: string | null;
   created_at: string;
 }

@@ -57,9 +57,9 @@
   "scripts": {
     "dev": "vite",
     "electron:dev": "vite",
-    "build": "tsc && vite build && electron-builder",
-    "build:web": "tsc --noEmit && vite build --config vite.config.web.ts",
-    "build:win": "tsc && vite build && electron-builder --win",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 tsc && vite build && electron-builder",
+    "build:web": "NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit && vite build --config vite.config.web.ts",
+    "build:win": "NODE_OPTIONS=--max-old-space-size=4096 tsc && vite build && electron-builder --win",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

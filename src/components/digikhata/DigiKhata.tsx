@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   LandPlot, Plus, X, Search, ArrowDownUp, Users, TrendingUp, TrendingDown,
-  Wallet, Phone, Calendar, CreditCard, FileText, ChevronRight,
+  Wallet, Phone, Calendar, CreditCard, FileText, ChevronRight, Trash2,
 } from 'lucide-react';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
@@ -77,8 +77,8 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
     );
   }, [parties, searchTerm]);
 
-  const loadParties = async () => {
-    setLoading(true);
+  const loadParties = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await window.api.dbQuery<Party[]>(
         'SELECT * FROM digikhata_parties ORDER BY current_balance DESC',
@@ -151,7 +151,7 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
       setPartyName('');
       setPartyPhone('');
       setPartyType('CUSTOMER');
-      await loadParties();
+      await loadParties(true);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to add party' });
     }
@@ -191,9 +191,45 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
       const label = txType === 'CREDIT_LENA' ? 'Credit (Lena)' : 'Debit (Dena)';
       setMessage({ type: 'success', text: `${label} of ${fmt(amount)} recorded for ${txParty.party_name}` });
       setShowTxModal(false);
-      await loadParties();
+      await loadParties(true);
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to record transaction' });
+    }
+  };
+
+  const handleDeleteParty = async (party: Party) => {
+    if (!window.confirm(`Delete party "${party.party_name}" and ALL their transactions? This cannot be undone.`)) return;
+    try {
+      const delEntries = await window.api.dbExecute('DELETE FROM digikhata_entries WHERE party_id = ?', [party.id]);
+      if (!delEntries.success) throw new Error(delEntries.error || 'Failed to delete entries');
+      const delParty = await window.api.dbExecute('DELETE FROM digikhata_parties WHERE id = ?', [party.id]);
+      if (!delParty.success) throw new Error(delParty.error || 'Failed to delete party');
+      setMessage({ type: 'success', text: `Party "${party.party_name}" deleted` });
+      await loadParties(true);
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to delete party' });
+    }
+  };
+
+  const handleDeleteEntry = async (entry: Transaction) => {
+    if (!ledgerParty) return;
+    if (!window.confirm('Delete this transaction? This cannot be undone.')) return;
+    try {
+      const del = await window.api.dbExecute('DELETE FROM digikhata_entries WHERE id = ?', [entry.id]);
+      if (!del.success) throw new Error(del.error || 'Failed to delete entry');
+      const balRes = await window.api.dbQuery(
+        `SELECT SUM(CASE WHEN entry_type = 'CREDIT_LENA' THEN amount ELSE -amount END) as total FROM digikhata_entries WHERE party_id = ?`,
+        [ledgerParty.id],
+      );
+      const newBalance = Number((balRes.data as any)?.[0]?.total) || 0;
+      await window.api.dbExecute('UPDATE digikhata_parties SET current_balance = ? WHERE id = ?', [newBalance, ledgerParty.id]);
+      setMessage({ type: 'success', text: 'Transaction deleted' });
+      const updated = { ...ledgerParty, current_balance: newBalance };
+      setLedgerParty(updated);
+      await loadLedger(updated);
+      await loadParties(true);
+    } catch (err) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to delete transaction' });
     }
   };
 
@@ -380,6 +416,13 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                             title="View Ledger"
                           >
                             <ChevronRight size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteParty(party)}
+                            className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg transition"
+                            title="Delete Party"
+                          >
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </td>
@@ -607,6 +650,7 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                         <th className="py-2 px-3 font-semibold">Note</th>
                         <th className="py-2 px-3 font-semibold text-right">Amount</th>
                         <th className="py-2 px-3 font-semibold text-right">Running Total</th>
+                        <th className="py-2 px-3 font-semibold text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
@@ -647,6 +691,15 @@ export const DigiKhata: React.FC<DigiKhataProps> = () => {
                               </td>
                               <td className={`py-2.5 px-3 text-right font-mono font-bold ${running > 0 ? 'text-emerald-400' : running < 0 ? 'text-rose-400' : 'text-slate-400'}`}>
                                 {running >= 0 ? '+' : '-'}{fmt(running)}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  onClick={() => handleDeleteEntry(tx)}
+                                  className="p-1 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded transition"
+                                  title="Delete Transaction"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
                               </td>
                             </tr>
                           );

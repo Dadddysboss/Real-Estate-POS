@@ -93,6 +93,7 @@ const App: React.FC = () => {
   const [branchId, setBranchId] = useState('BRANCH_MAIN');
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [, setSettingsVersion] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -104,11 +105,12 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    window.api.onSyncStatusUpdate((status: string) => {
+    const cleanup = window.api.onSyncStatusUpdate((status: string) => {
       if (status === 'online' || status === 'offline' || status === 'syncing') {
         setSyncStatus(status);
       }
     });
+    return cleanup;
   }, []);
 
   const handleAuthSuccess = (userData: { token: string; user: User }) => {
@@ -321,7 +323,7 @@ const App: React.FC = () => {
       case 'tax':
         return wrap(<TaxCalculator currentUser={user!} />);
       case 'settings':
-        return wrap(<Settings branchId={branchId} onBranchChange={setBranchId} />);
+        return wrap(<Settings branchId={branchId} onBranchChange={setBranchId} onSettingsChange={() => setSettingsVersion(v => v + 1)} />);
       default:
         return wrap(<Dashboard branchId={branchId} />);
     }

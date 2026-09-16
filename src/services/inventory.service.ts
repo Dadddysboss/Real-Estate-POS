@@ -26,6 +26,7 @@ export interface PlotPayload {
   gps_coordinates: string;
   status: PlotStatus;
   notes: string;
+  image_url: string;
 }
 
 export const PLOT_CATEGORIES: PlotCategory[] = ['RESIDENTIAL', 'COMMERCIAL', 'INDUSTRIAL', 'AGRICULTURAL'];
@@ -78,8 +79,8 @@ export async function createPlot(
     INSERT INTO inventory_plots (
       id, branch_id, plot_number, society_name, block_phase, size_dimension, category,
       feature_tags, purchase_date, purchase_price, target_asking_price, floor_price,
-      gps_coordinates, status, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      gps_coordinates, status, notes, image_url, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `;
   const args = [
     id,
@@ -97,6 +98,7 @@ export async function createPlot(
     payload.gps_coordinates || null,
     payload.status,
     payload.notes || null,
+    payload.image_url || '',
   ];
   const res = await window.api.dbExecute(sql, args);
   if (!res.success) throw new Error(res.error || 'Failed to insert plot record');
@@ -126,7 +128,8 @@ export async function updatePlot(
     UPDATE inventory_plots SET
       plot_number = ?, society_name = ?, block_phase = ?, size_dimension = ?, category = ?,
       feature_tags = ?, purchase_date = ?, purchase_price = ?, target_asking_price = ?,
-      floor_price = ?, gps_coordinates = ?, status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      floor_price = ?, gps_coordinates = ?, status = ?, notes = ?, image_url = ?,
+      updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `;
   const args = [
@@ -143,6 +146,7 @@ export async function updatePlot(
     payload.gps_coordinates || null,
     payload.status,
     payload.notes || null,
+    payload.image_url || '',
     id,
   ];
   const res = await window.api.dbExecute(sql, args);

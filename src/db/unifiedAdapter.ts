@@ -112,9 +112,9 @@ export async function queueForSync(tableName: string, action: 'INSERT' | 'UPDATE
   try {
     const id = `SYNC_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     await dbExecute(
-      `INSERT INTO sync_queue (id, table_name, action, payload, status, created_at)
+      `INSERT INTO sync_queue (id, action_type, target_table, payload_json, status, created_at)
        VALUES (?, ?, ?, ?, 'PENDING', datetime('now'))`,
-      [id, tableName, action, JSON.stringify(payload)]
+      [id, action, tableName, JSON.stringify(payload)]
     );
   } catch (err) {
     console.error('[UnifiedAdapter] Failed to queue sync:', err);
@@ -133,6 +133,123 @@ export async function getPendingSyncCount(): Promise<number> {
     return 0;
   } catch {
     return 0;
+  }
+}
+
+export async function getPendingSyncItems(limit = 50): Promise<unknown[]> {
+  try {
+    const result = await dbQuery(
+      `SELECT * FROM sync_queue WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT ?`,
+      [limit]
+    );
+    if (result.success && result.data) {
+      return result.data;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function markSyncItemCompleted(id: string): Promise<void> {
+  await dbExecute(
+    `UPDATE sync_queue SET status = 'SYNCED' WHERE id = ?`,
+    [id]
+  );
+}
+
+export async function markSyncItemFailed(id: string): Promise<void> {
+  await dbExecute(
+    `UPDATE sync_queue SET status = 'FAILED', retry_count = retry_count + 1 WHERE id = ?`,
+    [id]
+  );
+}
+
+/**
+ * Process pending sync queue items sequentially.
+ * Each item is replayed against the current database (local or remote).
+ * On success, marked SYNCED. On failure, marked FAILED.
+ */
+export async function processSyncQueue(): Promise<{ synced: number; failed: number }> {
+  let synced = 0;
+  let failed = 0;
+  try {
+    const items = await getPendingSyncItems(100);
+    for (const item of items) {
+      const row = item as { id: string; action_type: string; target_table: string; payload_json: string };
+      try {
+        const payload = JSON.parse(row.payload_json);
+        let sql = '';
+        const args: unknown[] = [];
+
+        switch (row.action_type) {
+          case 'INSERT': {
+            const columns = Object.keys(payload).filter(k => k !== 'id');
+            const placeholders = columns.map(() => '?').join(', ');
+            sql = `INSERT OR IGNORE INTO ${row.target_table} (${columns.join(', ')}) VALUES (${placeholders})`;
+            args.push(...columns.map(c => payload[c]));
+            break;
+          }
+          case 'UPDATE': {
+            const updateColumns = Object.keys(payload).filter(k => k !== 'id');
+            const setClauses = updateColumns.map(c => `${c} = ?`).join(', ');
+            sql = `UPDATE ${row.target_table} SET ${setClauses} WHERE id = ?`;
+            args.push(...updateColumns.map(c => payload[c]), payload.id);
+            break;
+          }
+          case 'DELETE': {
+            sql = `DELETE FROM ${row.target_table} WHERE id = ?`;
+            args.push(payload.id);
+            break;
+          }
+          default:
+            await markSyncItemFailed(row.id);
+            failed++;
+            continue;
+        }
+
+        if (sql) {
+          await dbExecute(sql, args);
+          await markSyncItemCompleted(row.id);
+          synced++;
+        }
+      } catch (err) {
+        console.error(`[SyncQueue] Failed to process item ${row.id}:`, err);
+        await markSyncItemFailed(row.id);
+        failed++;
+      }
+    }
+  } catch (err) {
+    console.error('[SyncQueue] Error processing queue:', err);
+  }
+  return { synced, failed };
+}
+
+/**
+ * Get a network/sync status summary for the UI.
+ */
+export async function getSyncStatusSummary(): Promise<{
+  isOnline: boolean;
+  pendingSyncItems: number;
+  lastSyncTime: string | null;
+  queuedOfflineWrites: number;
+}> {
+  try {
+    const netStatus = await window.api.getNetworkStatus();
+    const pendingSync = await getPendingSyncCount();
+    return {
+      isOnline: netStatus.data?.isOnline ?? navigator.onLine,
+      pendingSyncItems: pendingSync,
+      lastSyncTime: netStatus.data?.lastSyncTime ?? null,
+      queuedOfflineWrites: netStatus.data?.queuedWrites ?? 0,
+    };
+  } catch {
+    return {
+      isOnline: navigator.onLine,
+      pendingSyncItems: 0,
+      lastSyncTime: null,
+      queuedOfflineWrites: 0,
+    };
   }
 }
 
