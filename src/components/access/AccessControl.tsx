@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, Users, X, Key, AlertTriangle, Lock, CheckCircle, Eye } from 'lucide-react';
-import { fetchStaff, addStaff, updateStaffRole, setPinCode, fetchAuditLogs, searchAuditLogs } from '../../services/accessControl.service';
+import { fetchStaff, addStaff, updateStaffRole, setPinCode, fetchAuditLogs, searchAuditLogs, StaffRecord, AuditLogRecord, StaffPayload } from '../../services/accessControl.service';
 import { PaginatedTable } from '../common/PaginatedTable';
 import { safeStr } from '../../db/dbSanitizer';
 
@@ -11,12 +11,12 @@ interface AccessControlProps {
 }
 
 export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => {
-  const [staff, setStaff] = useState<any[]>([]);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [staff, setStaff] = useState<StaffRecord[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showStaffForm, setShowStaffForm] = useState(false);
   const [showPinForm, setShowPinForm] = useState(false);
-  const [targetStaff, setTargetStaff] = useState<any | null>(null);
+  const [targetStaff, setTargetStaff] = useState<StaffRecord | null>(null);
   const [activeTab, setActiveTab] = useState<'staff' | 'audit'>('staff');
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -199,7 +199,7 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
                     <td className="py-2.5 px-4 text-slate-400">{safeStr(s.branch_id) || 'Head Office'}</td>
                     <td className="py-2.5 px-4 text-center">
                       <label className="inline-flex items-center cursor-pointer">
-                        <input type="checkbox" checked={!!s.is_active} onChange={(e) => handleUpdateRole(s.id, s.role, e.target.checked)}
+                        <input type="checkbox" checked={!!s.is_active} onChange={(e) => handleUpdateRole(s.id, s.role as StaffPayload['role'], e.target.checked)}
                           className="sr-only peer" />
                         <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                       </label>

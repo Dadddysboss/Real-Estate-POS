@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Plus, X, MapPin, Phone, Mail, User, ChevronRight } from 'lucide-react';
-import { fetchBranches, createBranch, updateBranchStatus, generateBranchCode } from '../../services/branch.service';
-import { safeStr } from '../../db/dbSanitizer';
+import { fetchBranches, createBranch, updateBranchStatus, generateBranchCode, BranchRecord } from '../../services/branch.service';
+import { safeStr, safeNumber } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
 
@@ -10,10 +10,10 @@ interface BranchManagerProps {
 }
 
 export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => {
-  const [branches, setBranches] = useState<any[]>([]);
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<BranchRecord | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [branchName, setBranchName] = useState('');
@@ -236,11 +236,11 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
                 </div>
                 <div className="bg-slate-950/60 rounded-xl p-3 text-center">
                   <p className="text-[10px] text-slate-500 uppercase">Total Plots</p>
-                  <p className="text-sm font-bold text-sky-400 mt-1">{selectedBranch.total_plots ?? 0}</p>
+                  <p className="text-sm font-bold text-sky-400 mt-1">{safeNumber(selectedBranch.total_plots)}</p>
                 </div>
                 <div className="bg-slate-950/60 rounded-xl p-3 text-center">
                   <p className="text-[10px] text-slate-500 uppercase">Revenue</p>
-                  <p className="text-sm font-bold text-emerald-400 mt-1">Rs. {Math.round(selectedBranch.total_revenue ?? 0).toLocaleString()}</p>
+                  <p className="text-sm font-bold text-emerald-400 mt-1">Rs. {Math.round(safeNumber(selectedBranch.total_revenue)).toLocaleString()}</p>
                 </div>
               </div>
             </div>

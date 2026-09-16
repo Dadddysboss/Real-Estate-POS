@@ -1,4 +1,3 @@
-import { DatabaseResponse } from '../../electron/preload';
 import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
 
@@ -22,15 +21,49 @@ export interface DocumentPayload {
   file_path: string | null;
 }
 
+export interface KYCRecord {
+  id: string;
+  person_type: string;
+  full_name: string;
+  cnic: string;
+  phone_number: string;
+  address: string;
+  email: string | null;
+  verified: boolean;
+  created_at: string;
+}
+
+export interface DocumentRecord {
+  id: string;
+  document_type: string;
+  title: string;
+  description: string | null;
+  expiry_date: string | null;
+  related_person_id: string | null;
+  related_plot_id: string | null;
+  file_path: string | null;
+  created_at: string;
+}
+
 // ------------------------------------------------------------------
 // KYC OPERATIONS
 // ------------------------------------------------------------------
 
-export async function fetchKYCRegistry(): Promise<any[]> {
+export async function fetchKYCRegistry(): Promise<KYCRecord[]> {
   const sql = `SELECT * FROM kyc_registry ORDER BY created_at DESC`;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
+  const res = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch KYC registry');
-  return res.data;
+  return (res.data as Record<string, unknown>[]).map(row => ({
+    id: String(row.id || ''),
+    person_type: String(row.person_type || ''),
+    full_name: String(row.full_name || ''),
+    cnic: String(row.cnic || ''),
+    phone_number: String(row.phone_number || ''),
+    address: String(row.address || ''),
+    email: row.email != null ? String(row.email) : null,
+    verified: !!row.verified,
+    created_at: String(row.created_at || ''),
+  }));
 }
 
 export async function addKYCEntry(
@@ -81,11 +114,21 @@ export async function deleteKYC(kycId: string, userId: string, userName: string,
 // DOCUMENT OPERATIONS
 // ------------------------------------------------------------------
 
-export async function fetchDocuments(): Promise<any[]> {
+export async function fetchDocuments(): Promise<DocumentRecord[]> {
   const sql = `SELECT * FROM documents ORDER BY created_at DESC`;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
+  const res = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch documents');
-  return res.data;
+  return (res.data as Record<string, unknown>[]).map(row => ({
+    id: String(row.id || ''),
+    document_type: String(row.document_type || ''),
+    title: String(row.title || ''),
+    description: row.description != null ? String(row.description) : null,
+    expiry_date: row.expiry_date != null ? String(row.expiry_date) : null,
+    related_person_id: row.related_person_id != null ? String(row.related_person_id) : null,
+    related_plot_id: row.related_plot_id != null ? String(row.related_plot_id) : null,
+    file_path: row.file_path != null ? String(row.file_path) : null,
+    created_at: String(row.created_at || ''),
+  }));
 }
 
 export async function addDocument(
@@ -130,7 +173,7 @@ export function generateQRCodeData(docId: string): string {
   return `POS-DOC:${docId}:VERIFIED:${new Date().toISOString()}`;
 }
 
-export function checkExpiringDocuments(documents: any[], daysAhead = 30): any[] {
+export function checkExpiringDocuments(documents: DocumentRecord[], daysAhead = 30): DocumentRecord[] {
   const today = new Date();
   const threshold = new Date();
   threshold.setDate(today.getDate() + daysAhead);

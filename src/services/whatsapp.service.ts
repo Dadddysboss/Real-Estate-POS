@@ -1,4 +1,3 @@
-import { DatabaseResponse } from '../../electron/preload';
 import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
 
@@ -8,11 +7,29 @@ export interface WhatsAppTemplatePayload {
   placeholder_fields: string[];
 }
 
-export async function fetchWhatsappTemplates(): Promise<any[]> {
+export interface WhatsAppTemplateRecord {
+  id: string;
+  template_name: string;
+  message_body: string;
+  placeholders: string | null;
+  category: string | null;
+  status: string;
+  created_at: string;
+}
+
+export async function fetchWhatsappTemplates(): Promise<WhatsAppTemplateRecord[]> {
   const sql = `SELECT * FROM whatsapp_templates ORDER BY created_at DESC`;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
+  const res = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch templates');
-  return res.data;
+  return (res.data as Record<string, unknown>[]).map(row => ({
+    id: String(row.id || ''),
+    template_name: String(row.template_name || ''),
+    message_body: String(row.message_body || row.whatsapp_message || ''),
+    placeholders: row.placeholders != null ? String(row.placeholders) : null,
+    category: row.category != null ? String(row.category) : null,
+    status: String(row.status || 'DRAFT'),
+    created_at: String(row.created_at || ''),
+  }));
 }
 
 export async function createTemplate(

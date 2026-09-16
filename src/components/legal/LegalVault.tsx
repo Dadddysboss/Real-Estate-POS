@@ -3,6 +3,7 @@ import { ShieldCheck, X, Trash2, FileText, User, QrCode, AlertTriangle, CheckCir
 import {
   fetchKYCRegistry, addKYCEntry, verifyKYC, deleteKYC,
   fetchDocuments, addDocument, deleteDocument, generateQRCodeData, checkExpiringDocuments,
+  KYCRecord, DocumentRecord,
 } from '../../services/legal.service';
 import { safeStr } from '../../db/dbSanitizer';
 
@@ -13,13 +14,13 @@ interface LegalVaultProps {
 }
 
 export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
-  const [kycRecords, setKycRecords] = useState<any[]>([]);
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [kycRecords, setKycRecords] = useState<KYCRecord[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showKYCForm, setShowKYCForm] = useState(false);
   const [showDocForm, setShowDocForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'kyc' | 'documents'>('kyc');
-  const [qrCodeDoc, setQrCodeDoc] = useState<any | null>(null);
+  const [qrCodeDoc, setQrCodeDoc] = useState<DocumentRecord | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [kycPage, setKycPage] = useState(0);
   const [docPage, setDocPage] = useState(0);

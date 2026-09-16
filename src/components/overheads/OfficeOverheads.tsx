@@ -3,7 +3,7 @@ import { Wallet, Plus, X, Trash2, DollarSign } from 'lucide-react';
 import {
   fetchExpenses, recordExpense, deleteExpense,
   fetchAssets, addAsset, updateAssetBookValue,
-  calculateExpenseSummary,
+  calculateExpenseSummary, ExpenseRecord, AssetRecord,
 } from '../../services/overheads.service';
 import { safeStr } from '../../db/dbSanitizer';
 
@@ -16,8 +16,8 @@ interface OfficeOverheadsProps {
 const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser }) => {
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [assets, setAssets] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showAssetForm, setShowAssetForm] = useState(false);

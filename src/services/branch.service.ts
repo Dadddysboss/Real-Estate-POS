@@ -1,4 +1,3 @@
-import { DatabaseResponse } from '../../electron/preload';
 import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
 
@@ -23,7 +22,20 @@ export interface BranchSyncPayload {
 // BRANCH OPERATIONS
 // ------------------------------------------------------------------
 
-export async function fetchBranches(): Promise<any[]> {
+export interface BranchRecord {
+  id: string;
+  branch_code: string;
+  branch_name: string;
+  address: string;
+  phone_number: string;
+  email: string | null;
+  manager_name: string;
+  is_active: boolean;
+  total_plots: number;
+  total_revenue: number;
+}
+
+export async function fetchBranches(): Promise<BranchRecord[]> {
   const sql = `
     SELECT b.*,
       COALESCE(pc.total_plots, 0) AS total_plots,
@@ -43,9 +55,20 @@ export async function fetchBranches(): Promise<any[]> {
     WHERE b.is_active = 1
     ORDER BY b.branch_name ASC
   `;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, []);
+  const res = await window.api.dbQuery(sql, []);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch branches');
-  return res.data;
+  return (res.data as Record<string, unknown>[]).map(row => ({
+    id: String(row.id || ''),
+    branch_code: String(row.branch_code || ''),
+    branch_name: String(row.branch_name || ''),
+    address: String(row.address || ''),
+    phone_number: String(row.phone_number || ''),
+    email: row.email != null ? String(row.email) : null,
+    manager_name: String(row.manager_name || ''),
+    is_active: !!row.is_active,
+    total_plots: Number(row.total_plots) || 0,
+    total_revenue: Number(row.total_revenue) || 0,
+  }));
 }
 
 export async function createBranch(
@@ -114,7 +137,7 @@ export async function syncDataToBranch(
   });
 }
 
-export async function fetchSyncQueue(targetBranchId?: string): Promise<any[]> {
+export async function fetchSyncQueue(targetBranchId?: string): Promise<Record<string, unknown>[]> {
   let sql = `SELECT * FROM branch_sync_queue WHERE status = 'PENDING'`;
   const args: string[] = [];
   if (targetBranchId) {
@@ -122,29 +145,28 @@ export async function fetchSyncQueue(targetBranchId?: string): Promise<any[]> {
     args.push(targetBranchId);
   }
   sql += ` ORDER BY created_at ASC`;
-  const res: DatabaseResponse<any[]> = await window.api.dbQuery(sql, args);
+  const res = await window.api.dbQuery(sql, args);
   if (!res.success || !res.data) throw new Error(res.error || 'Failed to fetch sync queue');
-  return res.data;
+  return res.data as Record<string, unknown>[];
 }
 
 export async function processSyncQueue(recordId: string, _sourceBranchId: string, _targetBranchId: string, tableName: string): Promise<void> {
-  const recordRes: DatabaseResponse<any[]> = await window.api.dbQuery(
+  const recordRes = await window.api.dbQuery(
     `SELECT * FROM ${tableName} WHERE id = ? LIMIT 1`, [recordId]
   );
-  if (!recordRes.success || !recordRes.data || recordRes.data.length === 0) {
+  if (!recordRes.success || !recordRes.data || (recordRes.data as unknown[]).length === 0) {
     throw new Error(`Record ${recordId} not found in ${tableName}`);
   }
   
-  const record = recordRes.data[0];
+  const record = recordRes.data[0] as Record<string, unknown>;
   const columns = Object.keys(record).filter(k => k !== 'id').join(', ');
   const placeholders = Object.keys(record).filter(k => k !== 'id').map(() => '?').join(', ');
-  const values = Object.values(record).filter((_, i) => i > 0); // Skip 'id' in values
+  const values = Object.values(record).filter((_, i) => i > 0);
   
   const insertSql = `INSERT OR REPLACE INTO ${tableName}_temp (id, ${columns}) VALUES (${recordId}, ${placeholders})`;
   const insertRes = await window.api.dbExecute(insertSql, [recordId, ...values]);
   if (!insertRes.success) throw new Error(insertRes.error || `Failed to insert into ${tableName}_temp`);
   
-  // Update sync queue status
   const updateRes = await window.api.dbExecute(
     `UPDATE branch_sync_queue SET status = 'COMPLETED' WHERE id = ?`, [recordId]
   );
