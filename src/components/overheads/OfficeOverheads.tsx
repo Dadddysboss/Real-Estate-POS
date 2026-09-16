@@ -5,6 +5,7 @@ import {
   fetchAssets, addAsset, updateAssetBookValue,
   calculateExpenseSummary,
 } from '../../services/overheads.service';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 
@@ -15,7 +16,6 @@ interface OfficeOverheadsProps {
 const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 
 export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser }) => {
-  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -211,7 +211,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
               <tbody className="divide-y divide-slate-800/60">
                 {pagedExpenses.map((exp) => (
                   <tr key={exp.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 text-slate-300">{(exp.date ?? '').slice(0, 10)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{safeStr(exp.date).slice(0, 10)}</td>
                     <td className="py-2.5 px-4">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{safeStr(exp.category)}</span>
                     </td>
@@ -268,13 +268,13 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
                   <tr key={asset.id} className="hover:bg-slate-900/40">
                     <td className="py-2.5 px-4">
                       <p className="font-medium text-white">{safeStr(asset.asset_name)}</p>
-                      <p className="text-[10px] text-slate-500">{safeStr(asset.category)} · {asset.useful_life_years}yr life</p>
+                      <p className="text-[10px] text-slate-500">{safeStr(asset.category)} · {safeStr(asset.useful_life_years)}yr life</p>
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-white">{fmtNum(asset.purchase_price)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-emerald-400">{fmtNum(asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-amber-400">{fmtNum(asset.purchase_price - asset.current_book_value)}</td>
                     <td className="py-2.5 px-4 text-slate-400">{asset.depreciation_method === 'STRAIGHT_LINE' ? 'Straight Line' : 'Declining Balance'}</td>
-                    <td className="py-2.5 px-4 text-slate-300">{(asset.purchase_date ?? '').slice(0, 10)}</td>
+                    <td className="py-2.5 px-4 text-slate-300">{safeStr(asset.purchase_date).slice(0, 10)}</td>
                   </tr>
                 ))}
                 {assets.length === 0 && (

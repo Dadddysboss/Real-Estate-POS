@@ -4,6 +4,7 @@ import {
   CalendarDays, CreditCard, User, MapPin, ChevronDown, Plus, Trash2,
 } from 'lucide-react';
 import { notifyCashTransaction } from '../../db/unifiedAdapter';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CashCounterProps {
   branchId: string;
@@ -61,11 +62,6 @@ const createEmptyPaymentRow = (): PaymentRow => ({
   reference: '',
   amount: 0,
 });
-
-const safeStr = (v: unknown): string => {
-  if (v == null) return '';
-  return String(v);
-};
 
 export const CashCounter: React.FC<CashCounterProps> = ({ branchId, currentUser }) => {
   const [activeTab, setActiveTab] = useState<'instant' | 'installment'>('instant');

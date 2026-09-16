@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, Users, X, Key, AlertTriangle, Lock, CheckCircle, Eye } from 'lucide-react';
 import { fetchStaff, addStaff, updateStaffRole, setPinCode, fetchAuditLogs, searchAuditLogs } from '../../services/accessControl.service';
 import { PaginatedTable } from '../common/PaginatedTable';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
 
@@ -10,7 +11,6 @@ interface AccessControlProps {
 }
 
 export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => {
-  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [staff, setStaff] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

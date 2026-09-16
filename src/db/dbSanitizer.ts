@@ -4,7 +4,8 @@
  * - sanitizeParamsForTurso: Converts outgoing DB params to Turso-compatible format
  * - sanitizeRecordFromDB: Ensures every incoming DB row has safe non-undefined fields
  * - sanitizeRowsFromDB: Batch sanitize an array of DB rows
- * - safeStr: Safe string conversion for any value
+ * - safeStr: Foolproof string conversion — never crashes on any input type
+ * - safeNumber: Safe numeric coercion with fallback
  * - safeReplace: Null-safe string replace
  */
 
@@ -16,6 +17,7 @@ export function sanitizeParamForTurso(p: unknown): { type: string; value?: strin
   if (p === undefined || p === null) return { type: 'null' };
   if (typeof p === 'number') return { type: 'text', value: String(Number.isNaN(p) ? 0 : p) };
   if (typeof p === 'boolean') return { type: 'text', value: p ? '1' : '0' };
+  if (typeof p === 'bigint') return { type: 'text', value: p.toString() };
   if (typeof p === 'object') return { type: 'text', value: JSON.stringify(p) };
   return { type: 'text', value: String(p) };
 }
@@ -38,7 +40,7 @@ export function sanitizeRecordFromDB<T extends Record<string, unknown>>(row: T):
     } else if (val === null || val === undefined) {
       safe[key] = '';
     } else if (typeof val === 'object' && !(val instanceof Date)) {
-      safe[key] = JSON.stringify(val);
+      try { safe[key] = JSON.stringify(val); } catch { safe[key] = '[Object]'; }
     } else {
       safe[key] = val;
     }
@@ -52,12 +54,26 @@ export function sanitizeRowsFromDB<T extends Record<string, unknown>>(rows: T[])
 }
 
 // ═══════════════════════════════════════════
-// SAFE STRING UTILITIES
+// SAFE STRING UTILITIES (foolproof — never crashes on any input)
 // ═══════════════════════════════════════════
 
-export function safeStr(v: unknown): string {
-  if (v === null || v === undefined) return '';
-  return String(v);
+export function safeStr(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'boolean') return String(val);
+  if (typeof val === 'bigint') return val.toString();
+  if (typeof val === 'function') return '';
+  if (typeof val === 'symbol') return val.toString();
+  if (typeof val === 'object') {
+    if (val instanceof Date) return val.toISOString();
+    if (val instanceof Error) return val.message;
+    if (Array.isArray(val)) {
+      try { return JSON.stringify(val); } catch { return '[Array]'; }
+    }
+    try { return JSON.stringify(val); } catch { return '[Object]'; }
+  }
+  return String(val);
 }
 
 export function safeReplace(str: unknown, search: string, replacement: string): string {
@@ -90,6 +106,14 @@ export function safeTrim(v: unknown): string {
 
 export function safeSplit(v: unknown, separator: string): string[] {
   return safeStr(v).split(separator);
+}
+
+export function safeNumber(v: unknown, fallback = 0): number {
+  if (v === null || v === undefined) return fallback;
+  if (typeof v === 'bigint') return Number(v);
+  if (typeof v === 'number') return Number.isNaN(v) ? fallback : v;
+  if (typeof v === 'string') { const n = Number(v); return Number.isNaN(n) ? fallback : n; }
+  return fallback;
 }
 
 // ═══════════════════════════════════════════

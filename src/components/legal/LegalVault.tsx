@@ -4,6 +4,7 @@ import {
   fetchKYCRegistry, addKYCEntry, verifyKYC, deleteKYC,
   fetchDocuments, addDocument, deleteDocument, generateQRCodeData, checkExpiringDocuments,
 } from '../../services/legal.service';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 
@@ -12,7 +13,6 @@ interface LegalVaultProps {
 }
 
 export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
-  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [kycRecords, setKycRecords] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -308,7 +308,7 @@ export const LegalVault: React.FC<LegalVaultProps> = ({ currentUser }) => {
                     <td className="py-2.5 px-4"><span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300">{safeStr(doc.document_type)}</span></td>
                     <td className="py-2.5 px-4 text-slate-300 max-w-[200px] truncate">{safeStr(doc.description) || '—'}</td>
                     <td className={`py-2.5 px-4 font-mono text-xs ${expiringDocs.some(d => d.id === doc.id) ? 'text-amber-400' : 'text-slate-300'}`}>{safeStr(doc.expiry_date) || '—'}</td>
-                    <td className="py-2.5 px-4 text-slate-400 text-xs">{doc.related_plot_id ? `Plot: ${doc.related_plot_id}` : doc.related_person_id ? `Person: ${doc.related_person_id.slice(0, 12)}` : '—'}</td>
+                    <td className="py-2.5 px-4 text-slate-400 text-xs">{doc.related_plot_id ? `Plot: ${safeStr(doc.related_plot_id)}` : doc.related_person_id ? `Person: ${safeStr(doc.related_person_id).slice(0, 12)}` : '—'}</td>
                     <td className="py-2.5 px-4 text-right space-x-1">
                       <button onClick={() => setQrCodeDoc(doc)} className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded" title="Generate QR">
                         <QrCode size={12} />

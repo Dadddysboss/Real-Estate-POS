@@ -10,6 +10,7 @@ import {
   recordPayout, fetchPayouts, fetchPoolROI,
   type ProjectType,
 } from '../../services/investor.service';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 interface InvestorPoolsProps { currentUser: CurrentUser; branchId?: string; }
@@ -45,8 +46,6 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser, branc
   const [showPayoutForm, setShowPayoutForm] = useState(false);
   const [payoutInvestor, setPayoutInvestor] = useState<any>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const safeStr = (v: unknown): string => v == null ? '' : String(v);
 
   const [poolName, setPoolName] = useState('');
   const [poolProjectType, setPoolProjectType] = useState<ProjectType>('LAND');

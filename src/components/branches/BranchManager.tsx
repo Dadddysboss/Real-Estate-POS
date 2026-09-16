@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Plus, X, MapPin, Phone, Mail, User, ChevronRight } from 'lucide-react';
 import { fetchBranches, createBranch, updateBranchStatus, generateBranchCode } from '../../services/branch.service';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; role?: string; }
 
@@ -137,14 +138,14 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
                 <ChevronRight size={16} className="text-purple-400" />
               </div>
             </div>
-            <h3 className="font-bold text-white">{branch.branch_name}</h3>
-            <p className="text-xs text-slate-500 mt-1">Code: {branch.branch_code}</p>
-            <p className="text-xs text-slate-400 mt-2">Manager: {branch.manager_name}</p>
-            <p className="text-xs text-slate-400">{branch.address}</p>
+            <h3 className="font-bold text-white">{safeStr(branch.branch_name)}</h3>
+            <p className="text-xs text-slate-500 mt-1">Code: {safeStr(branch.branch_code)}</p>
+            <p className="text-xs text-slate-400 mt-2">Manager: {safeStr(branch.manager_name)}</p>
+            <p className="text-xs text-slate-400">{safeStr(branch.address)}</p>
             <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-2">
               <div className="text-center">
                 <p className="text-[10px] text-slate-500">Phone</p>
-                <p className="text-sm font-bold text-sky-400">{branch.phone_number || '—'}</p>
+                <p className="text-sm font-bold text-sky-400">{safeStr(branch.phone_number) || '—'}</p>
               </div>
               <div className="text-center">
                 <p className="text-[10px] text-slate-500">Status</p>
@@ -201,8 +202,8 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
                   <Building2 size={20} className="text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{selectedBranch.branch_name}</h3>
-                  <p className="text-xs text-slate-400">Code: {selectedBranch.branch_code}</p>
+                  <h3 className="text-base font-bold text-white">{safeStr(selectedBranch.branch_name)}</h3>
+                  <p className="text-xs text-slate-400">Code: {safeStr(selectedBranch.branch_code)}</p>
                 </div>
               </div>
               <button onClick={() => setSelectedBranch(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
@@ -211,20 +212,20 @@ export const BranchManager: React.FC<BranchManagerProps> = ({ currentUser }) => 
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex items-center gap-2 text-sm text-slate-300">
                   <User size={14} className="text-slate-500" />
-                  <span>{selectedBranch.manager_name || 'No manager'}</span>
+                   <span>{safeStr(selectedBranch.manager_name) || 'No manager'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-300">
                   <Phone size={14} className="text-slate-500" />
-                  <span>{selectedBranch.phone_number || 'No phone'}</span>
+                  <span>{safeStr(selectedBranch.phone_number) || 'No phone'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-slate-300 col-span-2">
                   <MapPin size={14} className="text-slate-500" />
-                  <span>{selectedBranch.address || 'No address'}</span>
+                  <span>{safeStr(selectedBranch.address) || 'No address'}</span>
                 </div>
                 {selectedBranch.email && (
                   <div className="flex items-center gap-2 text-sm text-slate-300 col-span-2">
                     <Mail size={14} className="text-slate-500" />
-                    <span>{selectedBranch.email}</span>
+                    <span>{safeStr(selectedBranch.email)}</span>
                   </div>
                 )}
               </div>

@@ -8,6 +8,7 @@ import {
   PLOT_CATEGORIES, PLOT_STATUSES, parseFeatureTags,
 } from '../../services/inventory.service';
 import { PlotSaleDetailModal } from '../sales/PlotSaleDetailModal';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface SalesDealRow {
   id: string;
@@ -41,7 +42,6 @@ interface PlotInventoryProps {
 type ViewMode = 'grid' | 'table' | 'map';
 
 const fmt = (n: number) => `Rs. ${Math.round(n || 0).toLocaleString('en-PK')}`;
-const safeStr = (v: unknown): string => v == null ? '' : String(v);
 
 const STATUS_STYLE: Record<string, string> = {
   AVAILABLE: 'status-emerald',

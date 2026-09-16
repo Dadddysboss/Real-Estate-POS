@@ -3,6 +3,7 @@ import {
   LandPlot, Plus, X, Search, ArrowDownUp, Users, TrendingUp, TrendingDown,
   Wallet, Phone, Calendar, CreditCard, FileText, ChevronRight, Trash2,
 } from 'lucide-react';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
 interface DigiKhataProps { currentUser: CurrentUser; }
@@ -28,7 +29,6 @@ interface Transaction {
 }
 
 const fmt = (n: number) => `Rs. ${Math.abs(Math.round(n || 0)).toLocaleString('en-PK')}`;
-const safeStr = (v: unknown): string => v == null ? '' : String(v);
 const PARTY_TYPES = ['CUSTOMER', 'VENDOR', 'INVESTOR', 'AGENT', 'PARTNER'] as const;
 const PAYMENT_MODES = ['Cash', 'JazzCash', 'EasyPaisa', 'Bank Transfer'] as const;
 

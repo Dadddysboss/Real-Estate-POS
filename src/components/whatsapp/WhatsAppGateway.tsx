@@ -4,6 +4,7 @@ import {
   Trash2, Edit3, Save, Search, Eye, Copy, ExternalLink, Info,
   Smartphone, FileText,
 } from 'lucide-react';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface WhatsAppTemplate {
   id: string;
@@ -423,8 +424,8 @@ const WhatsAppGateway: React.FC = () => {
               className="px-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm text-white focus:outline-none focus:border-green-500/50"
             >
               <option value="ALL">All Categories</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+               {categories.map(cat => (
+                <option key={cat} value={cat}>{safeStr(cat)}</option>
               ))}
             </select>
           </div>
@@ -442,7 +443,7 @@ const WhatsAppGateway: React.FC = () => {
             <div className="space-y-2">
               {filteredTemplates.map(tpl => {
                 const expanded = expandedId === tpl.id;
-                const placeholders = tpl.placeholders ? JSON.parse(tpl.placeholders) : [];
+                const placeholders = tpl.placeholders ? (() => { try { return JSON.parse(safeStr(tpl.placeholders)); } catch { return []; } })() : [];
 
                 return (
                   <div key={tpl.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
@@ -462,19 +463,19 @@ const WhatsAppGateway: React.FC = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold text-white text-sm truncate">{tpl.template_name}</p>
+                          <p className="font-semibold text-white text-sm truncate">{safeStr(tpl.template_name)}</p>
                           {tpl.category && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400">
-                              {tpl.category}
+                              {safeStr(tpl.category)}
                             </span>
                           )}
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                             tpl.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
                           }`}>
-                            {tpl.status}
+                            {safeStr(tpl.status)}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-500 truncate mt-0.5">{(tpl.message_body ?? '').slice(0, 80)}...</p>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">{safeStr(tpl.message_body).slice(0, 80)}...</p>
                         {placeholders.length > 0 && (
                           <div className="flex gap-1 mt-1.5 flex-wrap">
                             {placeholders.map((p: string) => (
@@ -508,7 +509,7 @@ const WhatsAppGateway: React.FC = () => {
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-semibold">Full Message</p>
                         <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
                           <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed">
-                            {renderPlaceholderHighlights(tpl.message_body)}
+                            {renderPlaceholderHighlights(safeStr(tpl.message_body))}
                           </pre>
                         </div>
                       </div>
@@ -530,10 +531,10 @@ const WhatsAppGateway: React.FC = () => {
             {/* Selected Template Info */}
             {selectedTemplate && (
               <div className="mb-3 px-3 py-2 bg-green-500/5 border border-green-500/20 rounded-lg">
-                <p className="text-xs text-green-300 font-semibold">{selectedTemplate.template_name}</p>
+                <p className="text-xs text-green-300 font-semibold">{safeStr(selectedTemplate.template_name)}</p>
                 {selectedTemplate.placeholders && (
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Placeholders: {JSON.parse(selectedTemplate.placeholders).join(', ')}
+                    Placeholders: {(() => { try { return JSON.parse(safeStr(selectedTemplate.placeholders)).map((x: unknown) => safeStr(x)).join(', '); } catch { return ''; } })()}
                   </p>
                 )}
               </div>

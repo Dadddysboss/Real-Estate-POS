@@ -4,6 +4,7 @@ import {
   Palette, Shield, Moon, Sun, Menu, X, Download as DownloadIcon, Plus, RefreshCw, ExternalLink
 } from 'lucide-react';
 import { notifyBackupCreated } from '../../db/unifiedAdapter';
+import { safeStr } from '../../db/dbSanitizer';
 
 interface Branch {
   id: string;
@@ -710,12 +711,12 @@ function BranchesTab({
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-sm">{branch.branch_name}</span>
+                  <span className="font-bold text-sm">{safeStr(branch.branch_name)}</span>
                   {selectedBranch === branch.id && <CheckCircle2 className="text-emerald-400" size={16} />}
                 </div>
                 <div className="text-[11px] text-slate-400 space-y-0.5">
-                  <span>{branch.city} ({branch.branch_code})</span>
-                  {branch.address && <span>{branch.address}</span>}
+                  <span>{safeStr(branch.city)} ({safeStr(branch.branch_code)})</span>
+                  {branch.address && <span>{safeStr(branch.address)}</span>}
                 </div>
               </button>
             ))}
@@ -726,7 +727,7 @@ function BranchesTab({
         <div className="lg:col-span-2 space-y-4">
           {editingBranch ? (
             <div className="glass-card p-6">
-              <h4 className="text-sm font-bold text-slate-300 mb-4">Edit Branch: {editingBranch.branch_name}</h4>
+              <h4 className="text-sm font-bold text-slate-300 mb-4">Edit Branch: {safeStr(editingBranch.branch_name)}</h4>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
