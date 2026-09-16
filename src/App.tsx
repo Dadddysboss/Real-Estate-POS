@@ -307,7 +307,7 @@ const App: React.FC = () => {
       case 'agents':
         return wrap(<AgentNetwork />);
       case 'investors':
-        return wrap(<InvestorPools currentUser={user!} />);
+        return wrap(<InvestorPools currentUser={user!} branchId={branchId} />);
       case 'construction':
         return wrap(<ConstructionTracker currentUser={user!} />);
       case 'expenses':

@@ -10,6 +10,7 @@ export interface PoolPayload {
   total_target_capital: number;
   description: string;
   status: 'ACTIVE' | 'CLOSED' | 'COMPLETED';
+  branch_id?: string;
 }
 
 export interface InvestorPayload {
@@ -63,11 +64,11 @@ export async function createPool(
   const id = `POOL_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const now = new Date().toISOString();
   const sql = `
-    INSERT INTO investor_pools (id, pool_name, project_type, total_target_capital, description, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO investor_pools (id, branch_id, pool_name, project_type, total_target_capital, description, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.pool_name, payload.project_type, Math.round(payload.total_target_capital),
+    id, payload.branch_id || 'BRANCH_MAIN', payload.pool_name, payload.project_type, Math.round(payload.total_target_capital),
     payload.description, payload.status, now
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to create pool');

@@ -12,7 +12,7 @@ import {
 } from '../../services/investor.service';
 
 interface CurrentUser { id: string; username: string; fullName: string; }
-interface InvestorPoolsProps { currentUser: CurrentUser; }
+interface InvestorPoolsProps { currentUser: CurrentUser; branchId?: string; }
 
 const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-PK')}`;
 const fmtNum = (n: number) => Math.round(n).toLocaleString('en-PK');
@@ -31,7 +31,7 @@ const PROJECT_TYPE_BADGE: Record<string, string> = {
   MIXED: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
 };
 
-export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => {
+export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser, branchId }) => {
   const [pools, setPools] = useState<any[]>([]);
   const [selectedPool, setSelectedPool] = useState<any | null>(null);
   const [investors, setInvestors] = useState<any[]>([]);
@@ -130,6 +130,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser }) => 
         total_target_capital: targetCapital,
         description: description.trim(),
         status: poolStatus,
+        branch_id: branchId || 'BRANCH_MAIN',
       });
       setMessage({ type: 'success', text: 'Pool created successfully' });
       setShowPoolForm(false);

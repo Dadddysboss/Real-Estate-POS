@@ -10,6 +10,7 @@ interface AccessControlProps {
 }
 
 export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => {
+  const safeStr = (v: unknown): string => v == null ? '' : String(v);
   const [staff, setStaff] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,15 +188,15 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
               <tbody className="divide-y divide-slate-800/60">
                 {staff.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-900/40">
-                    <td className="py-2.5 px-4 font-mono text-slate-300">{s.username}</td>
-                    <td className="py-2.5 px-4 font-medium text-white">{s.full_name}</td>
+                    <td className="py-2.5 px-4 font-mono text-slate-300">{safeStr(s.username)}</td>
+                    <td className="py-2.5 px-4 font-medium text-white">{safeStr(s.full_name)}</td>
                     <td className="py-2.5 px-4">
                       <select value={s.role} onChange={(e) => handleUpdateRole(s.id, e.target.value as any, s.is_active)}
                         className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300">
                         {['ADMIN','MANAGER','SALES','ACCOUNTANT','VIEWER'].map(r => (<option key={r} value={r}>{r}</option>))}
                       </select>
                     </td>
-                    <td className="py-2.5 px-4 text-slate-400">{s.branch_id || 'Head Office'}</td>
+                    <td className="py-2.5 px-4 text-slate-400">{safeStr(s.branch_id) || 'Head Office'}</td>
                     <td className="py-2.5 px-4 text-center">
                       <label className="inline-flex items-center cursor-pointer">
                         <input type="checkbox" checked={!!s.is_active} onChange={(e) => handleUpdateRole(s.id, s.role, e.target.checked)}
@@ -230,16 +231,16 @@ export const AccessControl: React.FC<AccessControlProps> = ({ currentUser }) => 
               renderItem={(log) => (
                 <div className="border-b border-slate-800/60 p-3 hover:bg-slate-900/40">
                   <div className="flex items-start gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${log.action_type === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : log.action_type === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
-                      {log.action_type === 'CREATE' ? <CheckCircle size={14} /> : log.action_type === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${safeStr(log.action_type) === 'CREATE' ? 'bg-emerald-500/20 text-emerald-400' : safeStr(log.action_type) === 'DELETE' ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/20 text-sky-400'}`}>
+                      {safeStr(log.action_type) === 'CREATE' ? <CheckCircle size={14} /> : safeStr(log.action_type) === 'DELETE' ? <AlertTriangle size={14} /> : <Eye size={14} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-slate-300">
-                        <span className="font-bold text-white">{log.user_name}</span>
-                        {' '}<span className="text-slate-400">{log.action_type}</span> in <span className="text-purple-400 font-mono">{log.module_name}</span>
+                        <span className="font-bold text-white">{safeStr(log.user_name)}</span>
+                        {' '}<span className="text-slate-400">{safeStr(log.action_type)}</span> in <span className="text-purple-400 font-mono">{safeStr(log.module_name)}</span>
                       </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{log.description || '—'}</p>
-                      <p className="text-[10px] text-slate-600 mt-1">{(log.created_at ?? '').slice(0, 19)}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{safeStr(log.description) || '—'}</p>
+                      <p className="text-[10px] text-slate-600 mt-1">{safeStr(log.created_at).slice(0, 19)}</p>
                     </div>
                   </div>
                 </div>
