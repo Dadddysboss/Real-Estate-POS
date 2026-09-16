@@ -206,6 +206,20 @@ function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown
     }
   }
 
+  // ── Arg-count validation: count ? placeholders vs bound args ──
+  const placeholderCount = (sql.match(/\?/g) || []).length;
+  if (placeholderCount !== args.length) {
+    if (placeholderCount > args.length) {
+      // More placeholders than args — pad with nulls
+      while (args.length < placeholderCount) {
+        args.push(null);
+      }
+    } else {
+      // More args than placeholders — truncate extra args
+      args.length = placeholderCount;
+    }
+  }
+
   return { sql, args };
 }
 
@@ -232,7 +246,7 @@ window.addEventListener('offline', () => updateWebOnlineStatus(false));
 
 // ── Flush Offline Queue on Connectivity ──
 
-/** Errors that indicate a permanent schema/constraint mismatch — drop immediately, don't retry */
+/** Errors that indicate a permanent structural mismatch — drop immediately, don't retry */
 const DROP_ERROR_PATTERNS = [
   'NOT NULL constraint',
   'UNIQUE constraint',
@@ -245,9 +259,12 @@ const DROP_ERROR_PATTERNS = [
   'UNIQUE constraint failed',
   'NOT NULL constraint failed',
   'column .* is not unique',
+  'Number of arguments mismatch',
+  'Input error',
+  'argument mismatch',
 ];
 
-function isConstraintError(err: unknown): boolean {
+function isFatalQueueError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return DROP_ERROR_PATTERNS.some(p => msg.toLowerCase().includes(p.toLowerCase()));
 }
@@ -267,11 +284,11 @@ async function flushWebOfflineQueue(): Promise<void> {
       await tursoExecute(sanitized.sql, sanitized.args);
       await removeQueuedWrite(item.id);
     } catch (err) {
-      const isConstraint = isConstraintError(err);
+      const isFatal = isFatalQueueError(err);
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.warn(`[Web] Queued write ${isConstraint ? 'DROPPED (constraint error)' : 'FAILED (will retry)'}:`, item.sql.substring(0, 80), errorMsg);
+      console.warn(`[Web] Queued write ${isFatal ? 'DROPPED (fatal error)' : 'FAILED (will retry)'}:`, item.sql.substring(0, 80), errorMsg);
 
-      if (isConstraint) {
+      if (isFatal) {
         // Permanent error — drop immediately, never retry
         await removeQueuedWrite(item.id);
         droppedCount++;

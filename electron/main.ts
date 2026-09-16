@@ -184,9 +184,12 @@ const DROP_ERROR_PATTERNS = [
   'has no column',
   'UNIQUE constraint failed',
   'NOT NULL constraint failed',
+  'Number of arguments mismatch',
+  'Input error',
+  'argument mismatch',
 ];
 
-function isConstraintError(err: unknown): boolean {
+function isFatalQueueError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
   return DROP_ERROR_PATTERNS.some(p => msg.toLowerCase().includes(p.toLowerCase()));
 }
@@ -263,6 +266,18 @@ function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown
     }
   }
 
+  // ── Arg-count validation: count ? placeholders vs bound args ──
+  const placeholderCount = (sql.match(/\?/g) || []).length;
+  if (placeholderCount !== args.length) {
+    if (placeholderCount > args.length) {
+      while (args.length < placeholderCount) {
+        args.push(null);
+      }
+    } else {
+      args.length = placeholderCount;
+    }
+  }
+
   return { sql, args };
 }
 
@@ -276,11 +291,11 @@ async function flushOfflineQueue() {
       const sanitized = sanitizeQueuedSQL(item);
       await db.execute({ sql: sanitized.sql, args: sanitized.args as any[] });
     } catch (err) {
-      const isConstraint = isConstraintError(err);
+      const isFatal = isFatalQueueError(err);
       const errorMsg = err instanceof Error ? err.message : String(err);
-      logToFile(`[Desktop] Queued write ${isConstraint ? 'DROPPED (constraint)' : 'FAILED (retry)'}: ${item.sql.substring(0, 80)} — ${errorMsg}`);
+      logToFile(`[Desktop] Queued write ${isFatal ? 'DROPPED (fatal error)' : 'FAILED (retry)'}: ${item.sql.substring(0, 80)} — ${errorMsg}`);
 
-      if (isConstraint) {
+      if (isFatal) {
         droppedCount++;
       } else if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
         remaining.push(item);
