@@ -103,6 +103,112 @@ async function removeQueuedWrite(id: string): Promise<void> {
   });
 }
 
+// ── Required Field Defaults (auto-inject for stale queued writes) ──
+const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
+  investor_pools: { branch_id: 'BRANCH_MAIN' },
+  agency_settings: { updated_at: new Date().toISOString() },
+  office_expenses: { branch_id: 'BRANCH_MAIN' },
+  fixed_assets: { branch_id: 'BRANCH_MAIN' },
+  inventory_plots: { branch_id: 'BRANCH_MAIN' },
+  leads: { branch_id: 'BRANCH_MAIN' },
+  cash_sessions: { branch_id: 'BRANCH_MAIN' },
+  cash_counter: { branch_id: 'BRANCH_MAIN' },
+  daily_expenses: { branch_id: 'BRANCH_MAIN' },
+  construction_projects: { branch_id: 'BRANCH_MAIN' },
+  expenses: { branch_id: 'BRANCH_MAIN' },
+};
+
+/**
+ * Parse a queued SQL statement and inject missing required fields.
+ * Handles INSERT INTO table (...) VALUES (...) and UPDATE table SET ... patterns.
+ * Returns the possibly-modified { sql, args } — original if no changes needed.
+ */
+function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown[] } {
+  let sql = item.sql;
+  const args = [...item.args];
+
+  // Match INSERT INTO table_name (col1, col2, ...) VALUES (?, ?, ...)
+  const insertMatch = sql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+  if (insertMatch) {
+    const tableName = insertMatch[1].toLowerCase();
+    const columnsStr = insertMatch[2];
+    const columns = columnsStr.split(',').map(c => c.trim().toLowerCase().replace(/["`]/g, ''));
+    const defaults = REQUIRED_FIELD_DEFAULTS[tableName];
+    if (!defaults) return { sql, args };
+
+    let modified = false;
+    for (const [col, defaultVal] of Object.entries(defaults)) {
+      if (!columns.includes(col)) {
+        // Column missing from INSERT — inject it
+        columns.push(col);
+        // Find the table's column order from CREATE TABLE and insert at the right position
+        // For simplicity, append to end (SQLite tolerates column order differences in INSERT)
+        args.push(col === 'updated_at' ? new Date().toISOString() : defaultVal);
+        modified = true;
+      } else {
+        // Column exists but value might be null/undefined — inject default
+        const idx = columns.indexOf(col);
+        if (idx >= 0 && (args[idx] === null || args[idx] === undefined || args[idx] === '')) {
+          args[idx] = col === 'updated_at' ? new Date().toISOString() : defaultVal;
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      const placeholders = columns.map(() => '?').join(', ');
+      sql = `INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+      return { sql, args };
+    }
+  }
+
+  // Match UPDATE table_name SET col1 = ?, col2 = ? WHERE id = ?
+  const updateMatch = sql.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)/i);
+  if (updateMatch) {
+    const tableName = updateMatch[1].toLowerCase();
+    const setClause = updateMatch[2];
+    const whereClause = updateMatch[3];
+    const defaults = REQUIRED_FIELD_DEFAULTS[tableName];
+    if (!defaults) return { sql, args };
+
+    // Extract SET columns
+    const setParts = setClause.split(',').map(s => s.trim());
+    const setColumns = setParts.map(part => {
+      const eqMatch = part.match(/(\w+)\s*=/);
+      return eqMatch ? eqMatch[1].toLowerCase() : '';
+    });
+
+    let modified = false;
+    let argIdx = 0;
+    for (const part of setParts) {
+      const eqMatch = part.match(/(\w+)\s*=/);
+      if (eqMatch) {
+        const col = eqMatch[1].toLowerCase();
+        const defaultsForTable = REQUIRED_FIELD_DEFAULTS[tableName];
+        if (defaultsForTable && defaultsForTable[col] && (args[argIdx] === null || args[argIdx] === undefined || args[argIdx] === '')) {
+          args[argIdx] = col === 'updated_at' ? new Date().toISOString() : defaultsForTable[col];
+          modified = true;
+        }
+      }
+      argIdx++;
+    }
+
+    // Also ensure updated_at is present in SET clause for tables that require it
+    if (defaults && defaults['updated_at'] && !setColumns.includes('updated_at')) {
+      setParts.push('updated_at = ?');
+      args.splice(argIdx, 0, new Date().toISOString());
+      modified = true;
+    }
+
+    if (modified) {
+      sql = `UPDATE ${tableName} SET ${setParts.join(', ')} WHERE ${whereClause}`;
+      return { sql, args };
+    }
+  }
+
+  return { sql, args };
+}
+
 // ── Network Status (Web) ──
 let webIsOnline = navigator.onLine;
 let lastWebSyncTime: string | null = null;
@@ -125,6 +231,27 @@ window.addEventListener('online', () => updateWebOnlineStatus(true));
 window.addEventListener('offline', () => updateWebOnlineStatus(false));
 
 // ── Flush Offline Queue on Connectivity ──
+
+/** Errors that indicate a permanent schema/constraint mismatch — drop immediately, don't retry */
+const DROP_ERROR_PATTERNS = [
+  'NOT NULL constraint',
+  'UNIQUE constraint',
+  'FOREIGN KEY constraint',
+  'CHECK constraint',
+  'no such column',
+  'no such table',
+  'has no column',
+  'table .* has no column',
+  'UNIQUE constraint failed',
+  'NOT NULL constraint failed',
+  'column .* is not unique',
+];
+
+function isConstraintError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return DROP_ERROR_PATTERNS.some(p => msg.toLowerCase().includes(p.toLowerCase()));
+}
+
 async function flushWebOfflineQueue(): Promise<void> {
   if (!webIsOnline) return;
   const queued = await getAllQueuedWrites();
@@ -132,25 +259,37 @@ async function flushWebOfflineQueue(): Promise<void> {
   console.log(`[Web] Flushing ${queued.length} queued offline writes...`);
 
   const remaining: OfflineQueueItem[] = [];
+  let droppedCount = 0;
   for (const item of queued) {
     try {
-      await tursoExecute(item.sql, item.args);
+      // Auto-sanitize: inject missing required fields before execution
+      const sanitized = sanitizeQueuedSQL(item);
+      await tursoExecute(sanitized.sql, sanitized.args);
       await removeQueuedWrite(item.id);
     } catch (err) {
-      console.error('[Web] Failed to flush queued write:', item.sql.substring(0, 60), err);
-      // Drop items older than 24 hours
-      if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+      const isConstraint = isConstraintError(err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Web] Queued write ${isConstraint ? 'DROPPED (constraint error)' : 'FAILED (will retry)'}:`, item.sql.substring(0, 80), errorMsg);
+
+      if (isConstraint) {
+        // Permanent error — drop immediately, never retry
+        await removeQueuedWrite(item.id);
+        droppedCount++;
+      } else if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+        // Transient error + less than 24h old — keep for retry
         remaining.push(item);
       } else {
+        // Old + failing — drop it
         await removeQueuedWrite(item.id);
+        droppedCount++;
       }
     }
   }
   if (remaining.length === 0) {
-    console.log('[Web] All queued writes flushed successfully');
+    console.log(`[Web] Queue flush complete. ${droppedCount > 0 ? `${droppedCount} stale items dropped.` : 'All writes flushed.'}`);
     lastWebSyncTime = new Date().toISOString();
   } else {
-    console.warn(`[Web] ${remaining.length} writes still queued`);
+    console.warn(`[Web] ${remaining.length} writes still queued (${droppedCount} dropped)`);
   }
 }
 

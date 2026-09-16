@@ -159,20 +159,134 @@ async function syncDatabase() {
   }
 }
 
+// ── Required Field Defaults (auto-inject for stale queued writes) ──
+const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
+  investor_pools: { branch_id: 'BRANCH_MAIN' },
+  agency_settings: { updated_at: new Date().toISOString() },
+  office_expenses: { branch_id: 'BRANCH_MAIN' },
+  fixed_assets: { branch_id: 'BRANCH_MAIN' },
+  inventory_plots: { branch_id: 'BRANCH_MAIN' },
+  leads: { branch_id: 'BRANCH_MAIN' },
+  cash_sessions: { branch_id: 'BRANCH_MAIN' },
+  cash_counter: { branch_id: 'BRANCH_MAIN' },
+  daily_expenses: { branch_id: 'BRANCH_MAIN' },
+  construction_projects: { branch_id: 'BRANCH_MAIN' },
+  expenses: { branch_id: 'BRANCH_MAIN' },
+};
+
+const DROP_ERROR_PATTERNS = [
+  'NOT NULL constraint',
+  'UNIQUE constraint',
+  'FOREIGN KEY constraint',
+  'CHECK constraint',
+  'no such column',
+  'no such table',
+  'has no column',
+  'UNIQUE constraint failed',
+  'NOT NULL constraint failed',
+];
+
+function isConstraintError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return DROP_ERROR_PATTERNS.some(p => msg.toLowerCase().includes(p.toLowerCase()));
+}
+
+function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown[] } {
+  let sql = item.sql;
+  const args = [...item.args];
+
+  const insertMatch = sql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+  if (insertMatch) {
+    const tableName = insertMatch[1].toLowerCase();
+    const columnsStr = insertMatch[2];
+    const columns = columnsStr.split(',').map(c => c.trim().toLowerCase().replace(/["`]/g, ''));
+    const defaults = REQUIRED_FIELD_DEFAULTS[tableName];
+    if (defaults) {
+      let modified = false;
+      for (const [col, defaultVal] of Object.entries(defaults)) {
+        if (!columns.includes(col)) {
+          columns.push(col);
+          args.push(col === 'updated_at' ? new Date().toISOString() : defaultVal);
+          modified = true;
+        } else {
+          const idx = columns.indexOf(col);
+          if (idx >= 0 && (args[idx] === null || args[idx] === undefined || args[idx] === '')) {
+            args[idx] = col === 'updated_at' ? new Date().toISOString() : defaultVal;
+            modified = true;
+          }
+        }
+      }
+      if (modified) {
+        const placeholders = columns.map(() => '?').join(', ');
+        sql = `INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+        return { sql, args };
+      }
+    }
+  }
+
+  const updateMatch = sql.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)/i);
+  if (updateMatch) {
+    const tableName = updateMatch[1].toLowerCase();
+    const setClause = updateMatch[2];
+    const whereClause = updateMatch[3];
+    const defaults = REQUIRED_FIELD_DEFAULTS[tableName];
+    if (defaults) {
+      const setParts = setClause.split(',').map(s => s.trim());
+      const setColumns: string[] = [];
+      let argIdx = 0;
+      for (const part of setParts) {
+        const eqMatch = part.match(/(\w+)\s*=/);
+        if (eqMatch) setColumns.push(eqMatch[1].toLowerCase());
+        argIdx++;
+      }
+      let modified = false;
+      argIdx = 0;
+      for (let i = 0; i < setParts.length; i++) {
+        const eqMatch = setParts[i].match(/(\w+)\s*=/);
+        if (eqMatch) {
+          const col = eqMatch[1].toLowerCase();
+          if (defaults[col] && (args[i] === null || args[i] === undefined || args[i] === '')) {
+            args[i] = col === 'updated_at' ? new Date().toISOString() : defaults[col];
+            modified = true;
+          }
+        }
+      }
+      if (defaults['updated_at'] && !setColumns.includes('updated_at')) {
+        setParts.push('updated_at = ?');
+        args.push(new Date().toISOString());
+        modified = true;
+      }
+      if (modified) {
+        sql = `UPDATE ${tableName} SET ${setParts.join(', ')} WHERE ${whereClause}`;
+        return { sql, args };
+      }
+    }
+  }
+
+  return { sql, args };
+}
+
 async function flushOfflineQueue() {
   if (offlineQueue.length === 0) return;
   logToFile(`[Desktop] Flushing ${offlineQueue.length} queued writes...`);
   const remaining: OfflineQueueItem[] = [];
+  let droppedCount = 0;
   for (const item of offlineQueue) {
     try {
-      await db.execute({ sql: item.sql, args: item.args as any[] });
+      const sanitized = sanitizeQueuedSQL(item);
+      await db.execute({ sql: sanitized.sql, args: sanitized.args as any[] });
     } catch (err) {
-      console.error('[Desktop] Failed to flush queued write:', item.sql.substring(0, 60), err);
-      // Only keep items that haven't exceeded max retries (24 hours worth of attempts)
-      if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+      const isConstraint = isConstraintError(err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logToFile(`[Desktop] Queued write ${isConstraint ? 'DROPPED (constraint)' : 'FAILED (retry)'}: ${item.sql.substring(0, 80)} — ${errorMsg}`);
+
+      if (isConstraint) {
+        droppedCount++;
+      } else if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
         remaining.push(item);
       } else {
         logToFile(`[Desktop] Dropping stale queued write (>24h): ${item.sql.substring(0, 60)}`);
+        droppedCount++;
       }
     }
   }
@@ -180,9 +294,9 @@ async function flushOfflineQueue() {
   offlineQueue.push(...remaining);
   saveOfflineQueue();
   if (remaining.length === 0) {
-    logToFile('[Desktop] All queued writes flushed successfully');
+    logToFile(`[Desktop] Queue flush complete. ${droppedCount > 0 ? `${droppedCount} stale items dropped.` : 'All writes flushed.'}`);
   } else {
-    logToFile(`[Desktop] ${remaining.length} writes still queued`);
+    logToFile(`[Desktop] ${remaining.length} writes still queued (${droppedCount} dropped)`);
   }
 
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
