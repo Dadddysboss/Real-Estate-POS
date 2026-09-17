@@ -18,11 +18,19 @@ export async function seedInitialData(client: Client) {
       CURRENT_TIMESTAMP
     )`,
     
-    // Seed Agency Settings
-    `INSERT OR IGNORE INTO agency_settings (id, agency_name, currency_symbol, created_at, updated_at) VALUES (
+    // Seed Agency Settings (all 13 columns explicitly seeded for schema alignment)
+    `INSERT OR IGNORE INTO agency_settings (id, agency_name, tagline, phone_primary, whatsapp_number, address, currency_symbol, logo_url_or_base64, local_backup_folder_path, turso_db_url, turso_sync_status, created_at, updated_at) VALUES (
       'MAIN_SETTINGS',
       'Dripp Real Estate & DigiKhata ERP',
+      '',
+      '',
+      '',
+      '',
       'Rs.',
+      '',
+      '',
+      '',
+      'DISCONNECTED',
       CURRENT_TIMESTAMP,
       CURRENT_TIMESTAMP
     )`

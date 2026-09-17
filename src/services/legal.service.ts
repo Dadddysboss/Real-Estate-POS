@@ -139,7 +139,7 @@ export async function addDocument(
 ): Promise<string> {
   const id = `DOC_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const sql = `
-    INSERT INTO documents (id, document_type, title, description, expiry_date, related_person_id, related_plot_id, file_path, created_at)
+    INSERT INTO documents (id, doc_type, title, description, expiry_date, related_person_id, related_plot_id, file_path, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
