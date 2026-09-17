@@ -120,6 +120,18 @@ const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
 };
 
 /**
+ * Known valid columns per table. Used to defensively strip stale/unknown columns
+ * from queued offline writes so a schema mismatch never becomes a fatal flush error.
+ * If a table is not listed here, its columns are left untouched.
+ */
+const KNOWN_TABLE_COLUMNS: Record<string, string[]> = {
+  installment_payments: [
+    'id', 'plan_id', 'plot_id', 'schedule_id', 'amount_paid', 'amount',
+    'payment_date', 'payment_mode', 'receipt_no', 'created_at',
+  ],
+};
+
+/**
  * Parse a queued SQL statement and inject missing required fields.
  * Handles INSERT INTO table (...) VALUES (...) and UPDATE table SET ... patterns.
  * Returns the possibly-modified { sql, args } — original if no changes needed.
@@ -134,20 +146,59 @@ function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown
     const tableName = insertMatch[1].toLowerCase();
     const columnsStr = insertMatch[2];
     const columns = columnsStr.split(',').map(c => c.trim().toLowerCase().replace(/["`]/g, ''));
+
+    // Defensive: strip any columns not present in the known schema for this table.
+    // This prevents "table X has no column named Y" fatal errors on stale queued writes.
+    const known = KNOWN_TABLE_COLUMNS[tableName];
+    if (known) {
+      const validIndices: number[] = [];
+      const keptColumns: string[] = [];
+      columns.forEach((col, idx) => {
+        if (known.includes(col)) {
+          validIndices.push(idx);
+          keptColumns.push(col);
+        } else {
+          console.warn(`[Web Queue Sanitize] Dropping unknown column "${col}" from queued ${tableName} write`);
+        }
+      });
+      if (keptColumns.length !== columns.length) {
+        const keptArgs = validIndices.map(i => args[i]);
+        columns.length = 0;
+        columns.push(...keptColumns);
+        args.length = 0;
+        args.push(...keptArgs);
+      }
+    }
+
+    // Defensive: validate args match columns BEFORE any defaults injection
+    // If original queued item had column/value mismatch, record it but try to fix
+    if (args.length < columns.length) {
+      console.warn(`[Web Queue Sanitize] INSERT ${tableName}: expected ${columns.length} values but only ${args.length} provided — padding with nulls`);
+      while (args.length < columns.length) {
+        args.push(null);
+      }
+    }
+
     const defaults = REQUIRED_FIELD_DEFAULTS[tableName];
-    if (!defaults) return { sql, args };
+    if (!defaults) {
+      // Even without field defaults, if we stripped unknown columns we must rebuild
+      // the SQL so it matches the filtered columns/args, else execution would fail.
+      const placeholderCount = (sql.match(/\?/g) || []).length;
+      const needsRebuild = placeholderCount !== columns.length;
+      if (needsRebuild) {
+        const placeholders = columns.map(() => '?').join(', ');
+        sql = `INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+      }
+      return { sql, args };
+    }
 
     let modified = false;
     for (const [col, defaultVal] of Object.entries(defaults)) {
       if (!columns.includes(col)) {
-        // Column missing from INSERT — inject it
         columns.push(col);
-        // Find the table's column order from CREATE TABLE and insert at the right position
-        // For simplicity, append to end (SQLite tolerates column order differences in INSERT)
         args.push(col === 'updated_at' ? new Date().toISOString() : defaultVal);
         modified = true;
       } else {
-        // Column exists but value might be null/undefined — inject default
         const idx = columns.indexOf(col);
         if (idx >= 0 && (args[idx] === null || args[idx] === undefined || args[idx] === '')) {
           args[idx] = col === 'updated_at' ? new Date().toISOString() : defaultVal;
@@ -157,6 +208,14 @@ function sanitizeQueuedSQL(item: OfflineQueueItem): { sql: string; args: unknown
     }
 
     if (modified) {
+      // Final validation: ensure columns and args still match after defaults injection
+      if (args.length < columns.length) {
+        while (args.length < columns.length) {
+          args.push(null);
+        }
+      } else if (args.length > columns.length) {
+        args.length = columns.length;
+      }
       const placeholders = columns.map(() => '?').join(', ');
       sql = `INSERT OR IGNORE INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
       return { sql, args };
@@ -432,7 +491,7 @@ async function autoSeedDatabase(): Promise<void> {
        "CREATE TABLE IF NOT EXISTS cash_counter (id TEXT PRIMARY KEY, branch_id TEXT, user_id TEXT, transaction_type TEXT, category TEXT, amount REAL, notes TEXT, handed_over_by TEXT, received_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS installment_plans (id TEXT PRIMARY KEY, plot_id TEXT, buyer_name TEXT, buyer_phone TEXT, buyer_cnic TEXT, total_sale_price REAL, down_payment REAL, plan_duration_months INTEGER, monthly_installment_amount REAL, start_date TEXT, due_day_of_month INTEGER, grace_period_days INTEGER DEFAULT 5, late_penalty_fee REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS installment_schedules (id TEXT PRIMARY KEY, plan_id TEXT, installment_number INTEGER, due_date TEXT, amount_due REAL, amount_paid REAL DEFAULT 0, late_fine_charged REAL DEFAULT 0, discount_applied REAL DEFAULT 0, payment_date TEXT, payment_method TEXT, status TEXT DEFAULT 'PENDING', created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS installment_payments (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, plot_id TEXT, amount_paid REAL NOT NULL, payment_date TEXT DEFAULT (datetime('now')), payment_mode TEXT DEFAULT 'CASH', receipt_no TEXT, created_at TEXT DEFAULT (datetime('now')))",
+       "CREATE TABLE IF NOT EXISTS installment_payments (id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, plot_id TEXT, schedule_id TEXT, amount_paid REAL DEFAULT 0, amount REAL DEFAULT 0, payment_date TEXT DEFAULT (datetime('now')), payment_mode TEXT DEFAULT 'CASH', receipt_no TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS digikhata_parties (id TEXT PRIMARY KEY, party_name TEXT, phone_number TEXT, party_type TEXT, current_balance REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS digikhata_entries (id TEXT PRIMARY KEY, party_id TEXT, entry_type TEXT, amount REAL, description TEXT, due_date TEXT, attachment_url TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, agency_name TEXT, agent_name TEXT, phone_number TEXT, cnic TEXT, commission_type TEXT, commission_rate REAL, created_at TEXT DEFAULT (datetime('now')))",
@@ -450,7 +509,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS whatsapp_templates (id TEXT PRIMARY KEY, template_key TEXT UNIQUE, message_body TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS tax_rules (id TEXT PRIMARY KEY, tax_name TEXT, tax_percentage REAL, applies_to TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS sync_queue (id TEXT PRIMARY KEY, action_type TEXT, target_table TEXT, payload_json TEXT, status TEXT DEFAULT 'PENDING', retry_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS agency_settings (id TEXT PRIMARY KEY DEFAULT 'MAIN_SETTINGS', agency_name TEXT DEFAULT 'Real Estate Enterprise', tagline TEXT, phone_primary TEXT, whatsapp_number TEXT, address TEXT, currency_symbol TEXT DEFAULT 'Rs.', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS agency_settings (id TEXT PRIMARY KEY DEFAULT 'MAIN_SETTINGS', agency_name TEXT DEFAULT 'Real Estate Enterprise', tagline TEXT, phone_primary TEXT, whatsapp_number TEXT, address TEXT, currency_symbol TEXT DEFAULT 'Rs.', logo_url_or_base64 TEXT, local_backup_folder_path TEXT, turso_db_url TEXT, turso_sync_status TEXT DEFAULT 'DISCONNECTED', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS plazas (id TEXT PRIMARY KEY, branch_id TEXT, plaza_name TEXT, city_location TEXT, total_floors INTEGER, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS plaza_units (id TEXT PRIMARY KEY, plaza_id TEXT, floor_level TEXT, unit_number TEXT, covered_area_sqft REAL, rate_per_sqft REAL, target_price REAL, status TEXT DEFAULT 'AVAILABLE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS site_visits (id TEXT PRIMARY KEY, lead_id TEXT, plot_id TEXT, visit_date TEXT, status TEXT DEFAULT 'SCHEDULED', feedback_notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -590,19 +649,33 @@ async function autoSeedDatabase(): Promise<void> {
       // Plot & acquisition image support
       ["inventory_plots", "image_url", "TEXT DEFAULT ''"],
       ["land_acquisitions", "image_url", "TEXT DEFAULT ''"],
+      // Agency settings (new columns from migrations.ts alignment)
+      ["agency_settings", "logo_url_or_base64", "TEXT DEFAULT ''"],
+      ["agency_settings", "local_backup_folder_path", "TEXT DEFAULT ''"],
+      ["agency_settings", "turso_db_url", "TEXT DEFAULT ''"],
+      ["agency_settings", "turso_sync_status", "TEXT DEFAULT 'DISCONNECTED'"],
+      // Installment payments — ensure schedule_id + amount exist (stale queued offline
+      // writes reference these columns; a missing column throws "has no column named schedule_id")
+      ["installment_payments", "schedule_id", "TEXT"],
+      ["installment_payments", "amount", "REAL DEFAULT 0"],
+      ["installment_payments", "amount_paid", "REAL DEFAULT 0"],
+      ["installment_payments", "plot_id", "TEXT"],
     ];
     for (const [table, column, definition] of alterMigrations) {
       await safeAddColumn(table, column, definition);
     }
 
     // Drop and recreate investor tables if schema is outdated
-    // This handles the case where old tables had incompatible columns
+    // This handles legacy 'target_capital' column and partial migration states
     try {
-      // Check if investor_pools has the old 'target_capital' column (not 'total_target_capital')
       const checkRes = await tursoExecute("PRAGMA table_info(investor_pools)");
       const poolCols = (checkRes.rows || []).map((r: Record<string, unknown>) => String(r.name || ''));
-      if (poolCols.includes('target_capital') && !poolCols.includes('total_target_capital')) {
-        console.log('[Web] Detected outdated investor_pools schema — recreating...');
+      const hasTargetCapital = poolCols.includes('target_capital');
+      const hasTotalTargetCapital = poolCols.includes('total_target_capital');
+
+      // Case 1: Old schema with only 'target_capital' (no 'total_target_capital') — full recreate
+      if (hasTargetCapital && !hasTotalTargetCapital) {
+        console.log('[Web] Detected outdated investor_pools schema (target_capital only) — recreating...');
         await tursoExecute("DROP TABLE IF EXISTS investor_payouts");
         await tursoExecute("DROP TABLE IF EXISTS dividend_distributions");
         await tursoExecute("DROP TABLE IF EXISTS investors");
@@ -614,6 +687,21 @@ async function autoSeedDatabase(): Promise<void> {
           { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
         ]);
         console.log('[Web] Investor tables recreated with new schema.');
+      }
+      // Case 2: Both columns exist (corrupted/partial migration state) — recreate to clean up old column
+      else if (hasTargetCapital && hasTotalTargetCapital) {
+        console.log('[Web] Detected investor_pools with both target_capital and total_target_capital columns — cleaning up...');
+        await tursoExecute("DROP TABLE IF EXISTS investor_payouts");
+        await tursoExecute("DROP TABLE IF EXISTS dividend_distributions");
+        await tursoExecute("DROP TABLE IF EXISTS investors");
+        await tursoExecute("DROP TABLE IF EXISTS investor_pools");
+        await tursoExecuteMulti([
+          { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
+        ]);
+        console.log('[Web] Investor tables cleaned up (removed legacy target_capital column).');
       }
     } catch (e) {
       console.warn('[Web] Investor schema check/recreation failed (non-blocking):', e);

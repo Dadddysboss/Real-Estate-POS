@@ -349,6 +349,20 @@ CREATE TABLE IF NOT EXISTS installment_schedules (
     FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS installment_payments (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    plot_id TEXT,
+    schedule_id TEXT,
+    amount_paid REAL DEFAULT 0,
+    amount REAL DEFAULT 0,
+    payment_date TEXT,
+    payment_mode TEXT DEFAULT 'CASH',
+    receipt_no TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (plan_id) REFERENCES installment_plans(id) ON DELETE CASCADE
+);
+
 -- ============================================================================
 -- MODULE 12: DIGIKHATA DOUBLE-ENTRY PARTY LEDGER
 -- ============================================================================
@@ -577,6 +591,31 @@ export async function runMigrations(client: Client) {
     } catch (error) {
       console.error('[Migration Error]', error);
       throw error;
+    }
+  }
+
+  // Defensive column migrations — PRAGMA-checked so they are idempotent.
+  // Handles pre-existing databases whose installment_payments table is missing
+  // newer columns (e.g. schedule_id), which would otherwise cause stale queued
+  // offline writes to fail with "table installment_payments has no column ...".
+  const columnMigrations: [string, string, string][] = [
+    ['installment_payments', 'schedule_id', 'TEXT'],
+    ['installment_payments', 'amount', 'REAL DEFAULT 0'],
+    ['installment_payments', 'amount_paid', 'REAL DEFAULT 0'],
+    ['installment_payments', 'plot_id', 'TEXT'],
+  ];
+
+  for (const [table, column, definition] of columnMigrations) {
+    try {
+      const info = await client.execute(`PRAGMA table_info(${table})`);
+      const cols = (info.rows || []).map((r: any) => String(r.name || ''));
+      if (!cols.includes(column)) {
+        console.log(`[Migration] Adding missing column ${table}.${column}`);
+        await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    } catch (error) {
+      // Table may not exist yet or PRAGMA unavailable — safe to ignore.
+      console.warn(`[Migration] Skipped column check for ${table}.${column}:`, error);
     }
   }
 }
