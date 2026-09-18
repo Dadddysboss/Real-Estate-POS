@@ -480,7 +480,7 @@ const AppShell: React.FC = () => {
         </header>
 
         {/* Module Content */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-6">
+        <main className="flex-1 min-w-0 overflow-y-auto p-6 pb-24 md:pb-0">
           {renderModuleContent(activeModule)}
         </main>
       </div>

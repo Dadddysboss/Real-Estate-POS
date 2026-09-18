@@ -846,17 +846,19 @@ html.theme-light .shimmer {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     align-items: flex-start !important;
+    padding-bottom: 0;
   }
 
-  /* Modal panel: full scroll with breathing room */
+  /* Modal panel: full scroll with breathing room; account for fixed bottom nav (~72px) */
   div.fixed.inset-0 > div {
-    max-height: calc(100dvh - 24px);
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 112px);
+    max-height: calc(100vh - 112px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     margin-top: 12px;
     margin-bottom: 12px;
+    padding-bottom: 24px;
   }
 
   /* Sticky modal headers so close button is always reachable */
@@ -866,6 +868,26 @@ html.theme-light .shimmer {
     z-index: 10;
     background: inherit;
     border-radius: 16px 16px 0 0;
+  }
+
+  /* Form containers and dialog bodies get bottom clearance for bottom nav */
+  div.fixed.inset-0 form,
+  div.fixed.inset-0 .modal-body,
+  div.fixed.inset-0 .scrollable-content,
+  div.fixed.inset-0 > div > div:last-child {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  /* Modal action buttons always above bottom nav */
+  div.fixed.inset-0 .modal-actions,
+  div.fixed.inset-0 form .flex.justify-end,
+  div.fixed.inset-0 .button-row,
+  div.fixed.inset-0 [class*="justify-end gap-"] {
+    position: sticky;
+    bottom: 0;
+    background: inherit;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 5;
   }
 
   /* Confirm dialogs centered but scrollable */
@@ -910,6 +932,7 @@ html.theme-light .shimmer {
   will-change: transform;
   transform: translateZ(0);
   backface-visibility: hidden;
+  z-index: 40;
 }
 
 .modal-scrollable,
