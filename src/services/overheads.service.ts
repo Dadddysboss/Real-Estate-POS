@@ -1,5 +1,6 @@
 import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
+import { getCurrentBranchId } from './branchContext.service';
 
 export interface ExpensePayload {
   category: string;
@@ -80,25 +81,27 @@ export async function recordExpense(
   userId: string,
   userName: string,
   payload: ExpensePayload
-): Promise<string> {
+): Promise<{ id: string; queued: boolean }> {
   const id = `EXP_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const branchId = getCurrentBranchId();
   const sql = `
-    INSERT INTO office_expenses (id, category, amount, description, date, recurring, recurring_frequency, payment_method, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO office_expenses (id, branch_id, category, amount, description, date, recurring, recurring_frequency, payment_method, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.category, Math.round(payload.amount), payload.description,
+    id, branchId, payload.category, Math.round(payload.amount), payload.description,
     payload.date, payload.recurring, payload.recurring_frequency, payload.payment_method
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to record expense');
+  const queued = res.queued === true || !!(res.data as { queued?: boolean } | undefined)?.queued;
 
-  await queueMutation('INSERT', 'office_expenses', { id, ...payload });
+  await queueMutation('INSERT', 'office_expenses', { id, branch_id: branchId, ...payload });
   await logAudit({
     userId, userName, actionType: 'CREATE', moduleName: 'EXPENSES',
     entityId: id,
     description: `Expense recorded: ${payload.category} — Rs. ${payload.amount.toLocaleString()}`,
   });
-  return id;
+  return { id, queued };
 }
 
 export async function deleteExpense(expenseId: string, userId: string, userName: string, ref: string): Promise<void> {
@@ -138,7 +141,7 @@ export async function addAsset(
   userId: string,
   userName: string,
   payload: AssetPayload
-): Promise<string> {
+): Promise<{ id: string; queued: boolean }> {
   const id = `ASSET_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   
   // Calculate annual depreciation
@@ -152,23 +155,25 @@ export async function addAsset(
   }
   const currentBookValue = payload.purchase_price;
 
+  const branchId = getCurrentBranchId();
   const sql = `
     INSERT INTO fixed_assets (id, branch_id, asset_name, asset_type, category, purchase_price, purchase_date, useful_life_years, salvage_value, depreciation_method, annual_depreciation, current_book_value, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, 'BRANCH_MAIN', payload.asset_name, payload.asset_type || payload.category, payload.category, Math.round(payload.purchase_price),
+    id, branchId, payload.asset_name, payload.asset_type || payload.category, payload.category, Math.round(payload.purchase_price),
     payload.purchase_date, payload.useful_life_years, Math.round(payload.salvage_value),
     payload.depreciation_method, Math.round(annualDepreciation), Math.round(currentBookValue)
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to add asset');
+  const queued = res.queued === true || !!(res.data as { queued?: boolean } | undefined)?.queued;
 
-  await queueMutation('INSERT', 'fixed_assets', { id, ...payload });
+  await queueMutation('INSERT', 'fixed_assets', { id, branch_id: branchId, ...payload });
   await logAudit({
     userId, userName, actionType: 'CREATE', moduleName: 'EXPENSES',
     entityId: id, description: `Fixed asset added: ${payload.asset_name} — Rs. ${payload.purchase_price.toLocaleString()}`,
   });
-  return id;
+  return { id, queued };
 }
 
 export async function calculateDepreciation(assetId: string): Promise<number> {

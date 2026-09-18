@@ -261,9 +261,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
     { label: 'Add Plot', icon: Plus, color: 'emerald', navigate: 'inventory' },
     { label: 'Record Sale', icon: ShoppingBag, color: 'sky', navigate: 'sales' },
     { label: 'Collect Installment', icon: CreditCard, color: 'amber', navigate: 'installments' },
-    { label: 'Add Lead', icon: Users, color: 'purple', navigate: 'leads' },
+    { label: 'Add Lead', icon: Users, color: 'purple', navigate: 'crm' },
     { label: 'Open Ledger', icon: BookIcon, color: 'rose', navigate: 'digikhata' },
-    { label: 'Overheads', icon: FileText, color: 'slate', navigate: 'overheads' },
+    { label: 'Overheads', icon: FileText, color: 'slate', navigate: 'expenses' },
   ];
 
   const colorClasses: Record<string, { bg: string; text: string; border: string; hoverBorder: string }> = {
@@ -394,7 +394,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Inventory Velocity by Category */}
-        <div className="glass-card p-6 rounded-2xl">
+        <div
+          className="glass-card p-6 rounded-2xl cursor-pointer hover:scale-[1.01] transition-transform"
+          onClick={() => onNavigate?.('inventory')}
+          role="button"
+        >
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="text-sky-400" size={18} />
             <h3 className="text-sm font-bold text-slate-300">Inventory by Category</h3>
@@ -425,7 +429,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ branchId, onNavigate }) =>
         </div>
 
         {/* Lead Pipeline */}
-        <div className="glass-card p-6 rounded-2xl lg:col-span-2">
+        <div
+          className="glass-card p-6 rounded-2xl lg:col-span-2 cursor-pointer hover:scale-[1.01] transition-transform"
+          onClick={() => onNavigate?.('crm')}
+          role="button"
+        >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Activity className="text-purple-400" size={18} />

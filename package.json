@@ -11,7 +11,7 @@
     "asar": true,
     "asarUnpack": [
       "**/*.node",
-      "**/node_modules/@libsql/**"
+      "node_modules/@libsql/**/*"
     ],
     "files": [
       "dist/**/*",
@@ -60,10 +60,14 @@
     "build": "NODE_OPTIONS=--max-old-space-size=4096 tsc && vite build && electron-builder",
     "build:web": "NODE_OPTIONS=--max-old-space-size=4096 tsc --noEmit && vite build --config vite.config.web.ts",
     "build:win": "NODE_OPTIONS=--max-old-space-size=4096 tsc && vite build && electron-builder --win",
+    "build:apk": "vite build && cap sync android && cd android && gradlew.bat assembleDebug",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "@libsql/client": "^0.6.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.0",

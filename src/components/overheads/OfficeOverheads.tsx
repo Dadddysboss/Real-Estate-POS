@@ -81,7 +81,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       return;
     }
     try {
-      await recordExpense(currentUser.id, currentUser.fullName, {
+      const result = await recordExpense(currentUser.id, currentUser.fullName, {
         category: expenseCategory,
         amount: expenseAmount,
         description: expenseDescription.trim(),
@@ -90,7 +90,9 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
         recurring_frequency: isRecurring ? recurringFreq : null,
         payment_method: expenseMethod,
       });
-      setMessage({ type: 'success', text: 'Expense recorded' });
+      setMessage(result.queued
+        ? { type: 'error', text: 'Saved offline — expense will sync when connection is restored' }
+        : { type: 'success', text: 'Expense recorded' });
       setShowExpenseForm(false);
       setExpenseAmount(0); setExpenseDescription('');
       const expData = await fetchExpenses();
@@ -118,7 +120,7 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
       return;
     }
     try {
-      await addAsset(currentUser.id, currentUser.fullName, {
+      const result = await addAsset(currentUser.id, currentUser.fullName, {
         asset_name: assetName.trim(),
         category: assetCategory,
         purchase_price: assetPrice,
@@ -127,7 +129,9 @@ export const OfficeOverheads: React.FC<OfficeOverheadsProps> = ({ currentUser })
         salvage_value: salvageValue,
         depreciation_method: depMethod,
       });
-      setMessage({ type: 'success', text: 'Asset added' });
+      setMessage(result.queued
+        ? { type: 'error', text: 'Saved offline — asset will sync when connection is restored' }
+        : { type: 'success', text: 'Asset added' });
       setShowAssetForm(false);
       setAssetName(''); setAssetPrice(0); setSalvageValue(0);
       const assetData = await fetchAssets();

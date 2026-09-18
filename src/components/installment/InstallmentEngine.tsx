@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   MessageSquare, Eye, Plus, CreditCard, Calendar, Check, Clock,
-  Search, X, AlertCircle, CheckCircle, Send, Phone, Hash,
+  Search, X, AlertCircle, CheckCircle, Send, Phone, Hash, Trash2, AlertTriangle,
 } from 'lucide-react';
 
 interface PlanRow {
@@ -82,6 +82,19 @@ const InstallmentEngine: React.FC = () => {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentReceiptNo, setPaymentReceiptNo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const [confirmState, setConfirmState] = useState<{
+    type: 'plan' | 'schedule';
+    plan: PlanRow;
+    schedule?: ScheduleRow;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error', message: string) => {
+    setToast({ type, message });
+    window.setTimeout(() => setToast(null), 3500);
+  };
 
   const loadPlans = async () => {
     setLoading(true);
@@ -278,6 +291,51 @@ const InstallmentEngine: React.FC = () => {
     setSubmitting(false);
   };
 
+  const confirmDeletePlan = (plan: PlanRow) => setConfirmState({ type: 'plan', plan });
+  const confirmDeleteSchedule = (plan: PlanRow, schedule: ScheduleRow) =>
+    setConfirmState({ type: 'schedule', plan, schedule });
+
+  const executeDelete = async () => {
+    if (!confirmState) return;
+    const { type, plan, schedule } = confirmState;
+    setDeleting(true);
+    try {
+      if (type === 'plan') {
+        await window.api.dbExecute(`DELETE FROM installment_payments WHERE plan_id = ?`, [plan.id]);
+        await window.api.dbExecute(`DELETE FROM installment_schedules WHERE plan_id = ?`, [plan.id]);
+        await window.api.dbExecute(`DELETE FROM installment_plans WHERE id = ?`, [plan.id]);
+        showToast('success', `Plan for ${plan.buyer_name} deleted with all schedules & payments.`);
+      } else if (type === 'schedule' && schedule) {
+        await window.api.dbExecute(`DELETE FROM installment_payments WHERE schedule_id = ?`, [schedule.id]);
+        await window.api.dbExecute(`DELETE FROM installment_schedules WHERE id = ?`, [schedule.id]);
+        if (plan.status === 'COMPLETED') {
+          const remaining = await window.api.dbQuery<{ cnt: number }>(
+            `SELECT COUNT(*) AS cnt FROM installment_schedules WHERE plan_id = ?`,
+            [plan.id]
+          );
+          const cnt = Number(remaining.data?.[0]?.cnt ?? 0);
+          if (cnt > 0) {
+            await window.api.dbExecute(`UPDATE installment_plans SET status = 'ACTIVE' WHERE id = ?`, [plan.id]);
+          }
+        }
+        showToast('success', `Installment #${schedule.installment_number} deleted.`);
+        if (detailPlan?.id === plan.id) {
+          const res = await window.api.dbQuery<ScheduleRow>(
+            `SELECT * FROM installment_schedules WHERE plan_id = ? ORDER BY installment_number ASC`,
+            [plan.id]
+          );
+          setDetailSchedules(res.success ? (res.data || []) : []);
+        }
+      }
+      setConfirmState(null);
+      await loadPlans();
+    } catch (err) {
+      console.error('Failed to delete installment record:', err);
+      showToast('error', 'Delete failed. Please try again.');
+    }
+    setDeleting(false);
+  };
+
   const filteredPlans = plans.filter(plan => {
     const q = (search ?? '').toLowerCase();
     return (
@@ -409,6 +467,13 @@ const InstallmentEngine: React.FC = () => {
                             <Plus className="w-3.5 h-3.5" />
                             Add
                           </button>
+                          <button
+                            onClick={() => confirmDeletePlan(plan)}
+                            className="flex items-center justify-center px-2.5 py-1.5 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/40 rounded-lg transition-colors"
+                            title="Delete Plan (removes schedules & payments)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -476,6 +541,7 @@ const InstallmentEngine: React.FC = () => {
                       <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Penalty</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Balance</th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Status</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -536,6 +602,15 @@ const InstallmentEngine: React.FC = () => {
                               {sched.status === 'PENDING' && <Clock className="w-3 h-3" />}
                               {sched.status}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button
+                              onClick={() => detailPlan && confirmDeleteSchedule(detailPlan, sched)}
+                              className="p-1.5 text-rose-400/80 hover:text-white hover:bg-rose-600 rounded-lg transition-colors"
+                              title="Delete this installment record and its payments"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -729,6 +804,48 @@ const InstallmentEngine: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {confirmState && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="glass-confirm w-full max-w-sm p-6 text-center" role="dialog" aria-modal="true">
+            <div className="mx-auto mb-4 w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center">
+              <AlertTriangle className="w-7 h-7 text-rose-400" />
+            </div>
+            <h3 className="text-lg font-bold text-white mb-2">
+              {confirmState.type === 'plan' ? 'Delete Installment Plan?' : `Delete Installment #${confirmState.schedule?.installment_number}?`}
+            </h3>
+            <p className="text-sm text-slate-400 mb-1">
+              {confirmState.type === 'plan'
+                ? `This permanently deletes the plan for ${confirmState.plan.buyer_name} (Plot ${confirmState.plan.plot_number || confirmState.plan.plot_id}) including ALL schedules and payment records.`
+                : `This permanently deletes installment #${confirmState.schedule?.installment_number} for ${confirmState.plan.buyer_name} and its payment records.`}
+            </p>
+            <p className="text-xs text-rose-400 font-medium mb-5">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmState(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-sm font-medium rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeDelete}
+                disabled={deleting}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
+              >
+                {deleting ? <Clock className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`toast ${toast.type === 'success' ? 'toast-success' : 'toast-error'}`}>
+          {toast.message}
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DataCacheProvider } from './contexts/DataCacheContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { Dashboard } from './components/dashboard/Dashboard';
 import { CashCounter } from './components/dashboard/CashCounter';
 import { PlotInventory } from './components/inventory/PlotInventory';
@@ -24,7 +25,7 @@ import { Settings } from './components/settings/Settings';
 import { NotificationCenter } from './components/notifications/NotificationCenter';
 import { getUnreadCount } from './db/unifiedAdapter';
 import InstallmentEngine from './components/installment/InstallmentEngine';
-import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator } from 'lucide-react';
+import { ShieldCheck, Lock, Building2, LayoutDashboard, Warehouse, ShoppingBag, Users, LandPlot, CreditCard, Bell, Wifi, WifiOff, Database, UserCheck, AlertTriangle, Search, Plus, Settings as SettingsIcon, MessageSquare, Calculator, Menu, X, Sun, Moon, Monitor, LayoutGrid } from 'lucide-react';
 import { safeStr } from './db/dbSanitizer';
 
 interface User {
@@ -86,15 +87,57 @@ const navigation = [
   { name: 'Settings', icon: SettingsIcon, href: '#settings' },
 ];
 
-const App: React.FC = () => {
+const MOBILE_BOTTOM_KEYS = ['dashboard', 'inventory', 'sales', 'installments'];
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    try {
+      return window.matchMedia('(max-width: 768px)').matches;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
+const ThemeToggle: React.FC<{ className?: string }> = ({ className = '' }) => {
+  const { theme, cycleTheme } = useTheme();
+  const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
+  return (
+    <button
+      onClick={cycleTheme}
+      className={`p-2 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-xl transition-colors ${className}`}
+      title={`Theme: ${theme} (tap to switch)`}
+      aria-label="Toggle theme"
+    >
+      <Icon size={18} />
+    </button>
+  );
+};
+
+const App: React.FC = () => (
+  <ThemeProvider>
+    <AppShell />
+  </ThemeProvider>
+);
+
+const AppShell: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [syncStatus, setSyncStatus] = useState<'online' | 'offline' | 'syncing'>('online');
   const [branchId, setBranchId] = useState('BRANCH_MAIN');
   const [notifOpen, setNotifOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [, setSettingsVersion] = useState(0);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const interval = setInterval(async () => {
@@ -140,18 +183,186 @@ const App: React.FC = () => {
     }
   };
 
+  const navigate = (mod: string) => {
+    safeSetActiveModule(mod);
+    setDrawerOpen(false);
+  };
+
   if (!isAuthenticated || !user) {
     return <ErrorBoundary module="Auth"><AuthGate onSuccess={handleAuthSuccess} /></ErrorBoundary>;
+  }
+
+  const bottomNavItems = filteredNavigation.filter((item) =>
+    MOBILE_BOTTOM_KEYS.includes(item.href.replace('#', ''))
+  ).slice(0, 3);
+
+  const mobileBottomNav = (
+    <nav className="bottom-nav">
+      {bottomNavItems.map((item) => {
+        const key = item.href.replace('#', '');
+        const isActive = activeModule === key;
+        return (
+          <button
+            key={item.name}
+            onClick={() => navigate(key)}
+            className={`bottom-nav-item ${isActive ? 'active' : ''}`}
+          >
+            <item.icon size={22} />
+            <span>{item.name.split(' ')[0]}</span>
+          </button>
+        );
+      })}
+      <button
+        onClick={() => setDrawerOpen(true)}
+        className="bottom-nav-item"
+      >
+        <LayoutGrid size={22} />
+        <span>More</span>
+      </button>
+    </nav>
+  );
+
+  const drawer = (
+    <>
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200]"
+        onClick={() => setDrawerOpen(false)}
+      />
+      <aside className="drawer-panel">
+        <div className="p-4 border-b border-slate-800/80 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
+              <Building2 size={20} />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-slate-100 text-sm tracking-wide truncate">Dripp ERP</span>
+              <span className="text-[11px] text-emerald-400 font-medium">DigiKhata Edition</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setDrawerOpen(false)}
+            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-lg transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+          {filteredNavigation.map((item) => {
+            const key = item.href.replace('#', '');
+            const isActive = activeModule === key;
+            return (
+              <button
+                key={item.name}
+                onClick={() => navigate(key)}
+                className={`w-full flex items-center space-x-3 px-3 py-3 rounded-2xl text-sm transition-all ${
+                  isActive
+                    ? 'bg-emerald-500/15 border border-emerald-500/40 text-white'
+                    : 'text-slate-300 hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                <div className={`flex-shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  <item.icon size={20} />
+                </div>
+                <span className="font-semibold">{safeStr(item.name)}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-slate-800/80 space-y-3 flex-shrink-0">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Appearance</span>
+            <ThemeToggle />
+          </div>
+          <div className="flex items-center space-x-3 p-2 bg-slate-900/60 rounded-xl">
+            <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
+              <ShieldCheck size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate">{safeStr(user?.fullName)}</p>
+              <p className="text-[10px] text-slate-400 capitalize">{safeStr(user?.role).toLowerCase()}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+              title="Lock Terminal"
+            >
+              <Lock size={16} />
+            </button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <DataCacheProvider>
+        <ErrorBoundary module="App">
+          <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 select-text">
+            {/* Mobile Top Glass Bar */}
+            <header className="mobile-topbar h-14 flex-shrink-0 flex items-center justify-between px-3 z-30">
+              <button
+                onClick={() => setDrawerOpen(true)}
+                className="p-2 -ml-1 text-slate-300 hover:text-white active:scale-90 rounded-xl transition-all"
+                aria-label="Open menu"
+              >
+                <Menu size={22} />
+              </button>
+              <div className="flex flex-col items-center min-w-0">
+                <span className="font-bold text-slate-100 text-sm capitalize truncate">
+                  {safeStr(activeModule).replace(/-/g, ' ')}
+                </span>
+                <span className="text-[9px] text-emerald-400 font-medium tracking-widest uppercase">Dripp ERP</span>
+              </div>
+              <div className="flex items-center">
+                <ThemeToggle />
+                <button
+                  onClick={() => setNotifOpen(true)}
+                  className="relative p-2 text-slate-300 active:scale-90 transition-transform"
+                  aria-label="Notifications"
+                >
+                  <Bell size={20} />
+                  {unreadNotifs > 0 && (
+                    <span className="absolute top-0.5 right-0 bg-red-500 text-white text-[9px] font-bold min-w-[16px] h-4 flex items-center justify-center rounded-full px-1">
+                      {unreadNotifs > 99 ? '99+' : String(unreadNotifs)}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </header>
+
+            {/* Module Content */}
+            <main className="flex-1 min-w-0 overflow-y-auto p-3 pb-24">
+              {renderModuleContent(activeModule)}
+            </main>
+
+            {drawerOpen && <ErrorBoundary module="Navigation">{drawer}</ErrorBoundary>}
+
+            {/* Mobile Bottom Nav (iOS style) */}
+            {mobileBottomNav}
+
+            <ErrorBoundary module="Notifications">
+              <NotificationCenter isOpen={notifOpen} onClose={() => {
+                setNotifOpen(false);
+                getUnreadCount().then(setUnreadNotifs);
+              }} />
+            </ErrorBoundary>
+          </div>
+        </ErrorBoundary>
+      </DataCacheProvider>
+    );
   }
 
   return (
     <DataCacheProvider>
     <ErrorBoundary module="App">
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 select-text">
-      {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col z-20 overflow-y-auto">
+      {/* Sidebar — Liquid Glass */}
+      <aside className="hidden md:flex w-64 flex-shrink-0 h-full bg-slate-900/70 backdrop-blur-2xl border-r border-white/10 flex-col z-20 overflow-y-auto">
         {/* Logo / Brand */}
-        <div className="p-4 border-b border-slate-800 flex items-center gap-3 flex-shrink-0">
+        <div className="p-4 border-b border-slate-800/80 flex items-center gap-3 flex-shrink-0">
           <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
             <Building2 size={20} />
           </div>
@@ -185,7 +396,7 @@ const App: React.FC = () => {
         </nav>
 
         {/* Sync Status & User */}
-        <div className="p-4 border-t border-slate-800 space-y-3 flex-shrink-0">
+        <div className="p-4 border-t border-slate-800/80 space-y-3 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <div className={`p-2 rounded-xl ${syncStatus === 'online' ? 'bg-emerald-500/10' : syncStatus === 'syncing' ? 'bg-amber-500/10' : 'bg-rose-500/10'}`}>
               {syncStatus === 'online' && <Wifi className="text-emerald-400" size={16} />}
@@ -202,7 +413,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 p-2 bg-slate-950 rounded-xl">
+          <div className="flex items-center space-x-3 p-2 bg-slate-950/70 rounded-xl">
             <div className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg">
               <ShieldCheck size={16} />
             </div>
@@ -223,11 +434,11 @@ const App: React.FC = () => {
 
       {/* Main Content Viewport */}
       <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-slate-950">
-        {/* Top Header */}
-        <header className="h-16 flex-shrink-0 border-b border-slate-800 bg-slate-900/90 px-6 flex items-center justify-between z-10">
+        {/* Top Header — Liquid Glass */}
+        <header className="h-16 flex-shrink-0 border-b border-white/10 bg-slate-900/60 backdrop-blur-2xl px-6 flex items-center justify-between z-10">
           <div className="flex items-center space-x-4">
             <h1 className="text-lg font-bold text-white capitalize">{safeStr(activeModule)}</h1>
-            <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 bg-slate-800 rounded">v1.0.0</span>
+            <span className="text-[10px] font-mono text-slate-400 px-2 py-0.5 bg-slate-800/80 rounded">v1.0.0</span>
           </div>
 
           <div className="flex items-center space-x-4">
@@ -236,10 +447,12 @@ const App: React.FC = () => {
               <input
                 type="text"
                 placeholder="Search plots, leads, parties, transactions..."
-                className="bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm text-white w-80 focus:outline-none focus:border-emerald-500"
+                className="bg-slate-950/70 border border-slate-800/80 rounded-xl pl-10 pr-4 py-2 text-sm text-white w-80 focus:outline-none focus:border-emerald-500"
               />
               <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
             </div>
+
+            <ThemeToggle />
 
             {/* Notifications */}
             <button
@@ -292,7 +505,7 @@ const App: React.FC = () => {
     }
     switch (module) {
       case 'dashboard':
-        return wrap(<Dashboard branchId={branchId} onNavigate={setActiveModule} />);
+        return wrap(<Dashboard branchId={branchId} onNavigate={navigate} />);
       case 'inventory':
         return wrap(<PlotInventory branchId={branchId} currentUser={user!} />);
       case 'plazas':

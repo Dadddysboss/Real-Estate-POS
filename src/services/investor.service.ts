@@ -1,6 +1,7 @@
 import { DatabaseResponse } from '../../electron/preload';
 import { logAudit } from './audit.service';
 import { queueMutation } from './sync.service';
+import { getCurrentBranchId } from './branchContext.service';
 
 export type ProjectType = 'LAND' | 'PLAZA' | 'SOCIETY' | 'MIXED';
 
@@ -68,7 +69,7 @@ export async function createPool(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.branch_id || 'BRANCH_MAIN', payload.pool_name, payload.project_type, Math.round(payload.total_target_capital),
+    id, payload.branch_id || getCurrentBranchId(), payload.pool_name, payload.project_type, Math.round(payload.total_target_capital),
     payload.description, payload.status, now
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to create pool');
@@ -116,25 +117,27 @@ export async function addInvestor(
   userId: string,
   userName: string,
   payload: InvestorPayload
-): Promise<string> {
+): Promise<{ id: string; queued: boolean }> {
   const id = `INV_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const branchId = getCurrentBranchId();
   const sql = `
-    INSERT INTO investors (id, pool_id, investor_name, phone_number, cnic, contributed_amount, equity_percentage, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO investors (id, branch_id, pool_id, investor_name, phone_number, cnic, contributed_amount, equity_percentage, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `;
   const res = await window.api.dbExecute(sql, [
-    id, payload.pool_id, payload.investor_name, payload.phone_number,
+    id, branchId, payload.pool_id, payload.investor_name, payload.phone_number,
     payload.cnic, Math.round(payload.contributed_amount), Math.round(payload.equity_percentage)
   ]);
   if (!res.success) throw new Error(res.error || 'Failed to add investor');
+  const queued = res.queued === true || !!(res.data as { queued?: boolean } | undefined)?.queued;
 
-  await queueMutation('INSERT', 'investors', { id, ...payload });
+  await queueMutation('INSERT', 'investors', { id, branch_id: branchId, ...payload });
   await logAudit({
     userId, userName, actionType: 'CREATE', moduleName: 'INVESTORS',
     entityId: id,
     description: `Investor added to pool: ${payload.investor_name} — Rs. ${payload.contributed_amount.toLocaleString()} (${payload.equity_percentage}% equity)`,
   });
-  return id;
+  return { id, queued };
 }
 
 export async function removeInvestor(

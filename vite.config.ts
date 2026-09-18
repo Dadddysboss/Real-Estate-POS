@@ -11,6 +11,13 @@ export default defineConfig(({ mode }) => {
       electron({
         main: {
           entry: 'electron/main.ts',
+          vite: {
+            build: {
+              rollupOptions: {
+                external: [/^@libsql\//, /^libsql($|\/)/],
+              },
+            },
+          },
         },
         preload: {
           input: 'electron/preload.ts',

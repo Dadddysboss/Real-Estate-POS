@@ -168,10 +168,10 @@ const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
   inventory_plots: { branch_id: 'BRANCH_MAIN' },
   leads: { branch_id: 'BRANCH_MAIN' },
   cash_sessions: { branch_id: 'BRANCH_MAIN' },
-  cash_counter: { branch_id: 'BRANCH_MAIN' },
   daily_expenses: { branch_id: 'BRANCH_MAIN' },
   construction_projects: { branch_id: 'BRANCH_MAIN' },
   expenses: { branch_id: 'BRANCH_MAIN' },
+  investors: { branch_id: 'BRANCH_MAIN' },
 };
 
 const DROP_ERROR_PATTERNS = [
@@ -398,7 +398,8 @@ async function dbExecute(sql: string, args: unknown[] = []): Promise<{ rows: Rec
     // This ensures data is never lost even if the connection drops mid-operation
     if (isWrite) {
       queueWriteOffline(sql, args);
-      return { rows: [] };
+      // Surface queued state so the UI can show "saved offline" instead of false success
+      return { rows: [], queued: true } as { rows: Record<string, unknown>[]; queued?: boolean };
     }
     throw err;
   }
@@ -541,7 +542,7 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS land_acquisitions (id TEXT PRIMARY KEY, seller_name TEXT, seller_phone TEXT, seller_cnic TEXT, land_title_khata TEXT, total_agreed_price REAL, advance_paid REAL, debt_remaining REAL, acquisition_date TEXT, registry_doc_url TEXT, image_url TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')))",
   // ── Investor tables (IDENTICAL to webAdapter — project_type, total_target_capital, investors table name) ──
   "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))",
-  "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
   // ── Construction ──
@@ -550,7 +551,7 @@ const TABLES_TO_ENSURE = [
   "CREATE TABLE IF NOT EXISTS construction_material_stock (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL, min_stock_alert REAL, unit_cost REAL)",
   "CREATE TABLE IF NOT EXISTS construction_material_logs (id TEXT PRIMARY KEY, project_id TEXT, material_id TEXT, quantity_used REAL, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
   // ── Expenses & assets (IDENTICAL to webAdapter — includes date, recurring, category NOT NULL) ──
-  "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, date TEXT, recurring INTEGER DEFAULT 0, recurring_frequency TEXT, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+  "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, date TEXT, recurring INTEGER DEFAULT 0, recurring_frequency TEXT, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS fixed_assets (id TEXT PRIMARY KEY, branch_id TEXT, asset_name TEXT NOT NULL, asset_type TEXT, category TEXT, purchase_price REAL DEFAULT 0, purchase_date TEXT, useful_life_years INTEGER DEFAULT 5, salvage_value REAL DEFAULT 0, depreciation_method TEXT DEFAULT 'STRAIGHT_LINE', annual_depreciation REAL DEFAULT 0, current_book_value REAL DEFAULT 0, depreciation_rate REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS daily_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category_name TEXT, amount REAL, payment_source TEXT, approved_by TEXT, description TEXT, voucher_number TEXT, created_at TEXT DEFAULT (datetime('now')))",
   "CREATE TABLE IF NOT EXISTS expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, payment_mode TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))",
@@ -714,6 +715,9 @@ async function initializeDatabase() {
       ["agency_settings", "local_backup_folder_path", "TEXT DEFAULT ''"],
       ["agency_settings", "turso_db_url", "TEXT DEFAULT ''"],
       ["agency_settings", "turso_sync_status", "TEXT DEFAULT 'DISCONNECTED'"],
+      // Office expenses / investors — branch_id must never be NULL (NOT NULL constraint crashes)
+      ["office_expenses", "branch_id", "TEXT DEFAULT 'BRANCH_MAIN'"],
+      ["investors", "branch_id", "TEXT DEFAULT 'BRANCH_MAIN'"],
       // Installment payments — ensure schedule_id + amount exist (stale queued offline
       // writes reference these columns; a missing column throws "has no column named schedule_id")
       ["installment_payments", "schedule_id", "TEXT"],
@@ -742,7 +746,7 @@ async function initializeDatabase() {
         await dbExecute("DROP TABLE IF EXISTS investor_pools");
         await dbExecuteMulti([
           { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
-          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
         ]);
@@ -757,7 +761,7 @@ async function initializeDatabase() {
         await dbExecute("DROP TABLE IF EXISTS investor_pools");
         await dbExecuteMulti([
           { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
-          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
         ]);

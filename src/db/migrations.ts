@@ -497,6 +497,21 @@ CREATE TABLE IF NOT EXISTS daily_expenses (
     FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS office_expenses (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT DEFAULT 'BRANCH_MAIN',
+    category TEXT NOT NULL,
+    description TEXT,
+    amount REAL NOT NULL,
+    date TEXT,
+    recurring INTEGER DEFAULT 0,
+    recurring_frequency TEXT,
+    payment_method TEXT DEFAULT 'CASH',
+    approved_by TEXT,
+    expense_date TEXT,
+    created_at TEXT NOT NULL
+);
+
 -- ============================================================================
 -- MODULE 16: LEGAL VAULT & KYC REGISTRY
 -- ============================================================================
@@ -603,6 +618,9 @@ export async function runMigrations(client: Client) {
     ['installment_payments', 'amount', 'REAL DEFAULT 0'],
     ['installment_payments', 'amount_paid', 'REAL DEFAULT 0'],
     ['installment_payments', 'plot_id', 'TEXT'],
+    // branch_id must never be NULL — prevents "NOT NULL constraint failed" crashes
+    ['office_expenses', 'branch_id', "TEXT DEFAULT 'BRANCH_MAIN'"],
+    ['investors', 'branch_id', "TEXT DEFAULT 'BRANCH_MAIN'"],
   ];
 
   for (const [table, column, definition] of columnMigrations) {

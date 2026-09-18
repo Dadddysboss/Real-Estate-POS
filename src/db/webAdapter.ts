@@ -5,6 +5,7 @@ interface DatabaseResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  queued?: boolean;
 }
 
 interface AuthResponse {
@@ -116,6 +117,7 @@ const REQUIRED_FIELD_DEFAULTS: Record<string, Record<string, string>> = {
   daily_expenses: { branch_id: 'BRANCH_MAIN' },
   construction_projects: { branch_id: 'BRANCH_MAIN' },
   expenses: { branch_id: 'BRANCH_MAIN' },
+  investors: { branch_id: 'BRANCH_MAIN' },
   kyc_registry: { party_type: 'INVESTOR', person_type: 'BUYER' },
 };
 
@@ -498,7 +500,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS agent_commissions (id TEXT PRIMARY KEY, agent_id TEXT, transaction_id TEXT, commission_earned REAL, commission_paid REAL DEFAULT 0, balance_due REAL, status TEXT DEFAULT 'UNPAID', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS land_acquisitions (id TEXT PRIMARY KEY, seller_name TEXT, seller_phone TEXT, seller_cnic TEXT, land_title_khata TEXT, total_agreed_price REAL, advance_paid REAL, debt_remaining REAL, acquisition_date TEXT, registry_doc_url TEXT, image_url TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS construction_projects (id TEXT PRIMARY KEY, branch_id TEXT, project_name TEXT, site_location TEXT, budget_allocated REAL, total_spent REAL DEFAULT 0, status TEXT DEFAULT 'PLANNING', created_at TEXT DEFAULT (datetime('now')))",
@@ -516,7 +518,7 @@ async function autoSeedDatabase(): Promise<void> {
       "CREATE TABLE IF NOT EXISTS staff_users (id TEXT PRIMARY KEY, username TEXT UNIQUE, password_hash TEXT, full_name TEXT, role TEXT DEFAULT 'STAFF', branch_id TEXT, pin_code TEXT, pin_hash TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS materials (id TEXT PRIMARY KEY, project_id TEXT, item_name TEXT, unit TEXT, quantity_in_stock REAL DEFAULT 0, min_stock_alert REAL DEFAULT 0, unit_cost REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS material_usages (id TEXT PRIMARY KEY, material_id TEXT, project_id TEXT, quantity_used REAL, used_by TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')))",
-      "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT, category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, date TEXT, recurring INTEGER DEFAULT 0, recurring_frequency TEXT, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
+      "CREATE TABLE IF NOT EXISTS office_expenses (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', category TEXT NOT NULL, description TEXT, amount REAL NOT NULL, date TEXT, recurring INTEGER DEFAULT 0, recurring_frequency TEXT, payment_method TEXT DEFAULT 'CASH', approved_by TEXT, expense_date TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS fixed_assets (id TEXT PRIMARY KEY, branch_id TEXT, asset_name TEXT NOT NULL, asset_type TEXT, category TEXT, purchase_price REAL DEFAULT 0, purchase_date TEXT, useful_life_years INTEGER DEFAULT 5, salvage_value REAL DEFAULT 0, depreciation_method TEXT DEFAULT 'STRAIGHT_LINE', annual_depreciation REAL DEFAULT 0, current_book_value REAL DEFAULT 0, depreciation_rate REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS kyc_registry (id TEXT PRIMARY KEY, party_type TEXT, party_id TEXT, person_type TEXT, full_name TEXT, cnic TEXT, cnic_number TEXT, phone_number TEXT, address TEXT, email TEXT, verified INTEGER DEFAULT 0, cnic_expiry TEXT, address_proof TEXT, photo_url TEXT, status TEXT DEFAULT 'PENDING', verified_at TEXT, created_at TEXT DEFAULT (datetime('now')))",
       "CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, title TEXT, doc_type TEXT, document_type TEXT, description TEXT, reference_type TEXT, reference_id TEXT, related_person_id TEXT, related_plot_id TEXT, expiry_date TEXT, file_path TEXT, file_base64 TEXT, uploaded_by TEXT, created_at TEXT DEFAULT (datetime('now')))",
@@ -654,6 +656,9 @@ async function autoSeedDatabase(): Promise<void> {
       ["agency_settings", "local_backup_folder_path", "TEXT DEFAULT ''"],
       ["agency_settings", "turso_db_url", "TEXT DEFAULT ''"],
       ["agency_settings", "turso_sync_status", "TEXT DEFAULT 'DISCONNECTED'"],
+      // Office expenses / investors — branch_id must never be NULL (NOT NULL constraint crashes)
+      ["office_expenses", "branch_id", "TEXT DEFAULT 'BRANCH_MAIN'"],
+      ["investors", "branch_id", "TEXT DEFAULT 'BRANCH_MAIN'"],
       // Installment payments — ensure schedule_id + amount exist (stale queued offline
       // writes reference these columns; a missing column throws "has no column named schedule_id")
       ["installment_payments", "schedule_id", "TEXT"],
@@ -682,7 +687,7 @@ async function autoSeedDatabase(): Promise<void> {
         await tursoExecute("DROP TABLE IF EXISTS investor_pools");
         await tursoExecuteMulti([
           { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
-          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
         ]);
@@ -697,7 +702,7 @@ async function autoSeedDatabase(): Promise<void> {
         await tursoExecute("DROP TABLE IF EXISTS investor_pools");
         await tursoExecuteMulti([
           { sql: "CREATE TABLE IF NOT EXISTS investor_pools (id TEXT PRIMARY KEY, branch_id TEXT, pool_name TEXT NOT NULL, project_type TEXT DEFAULT 'LAND', total_target_capital REAL DEFAULT 0, raised_capital REAL DEFAULT 0, status TEXT DEFAULT 'ACTIVE', description TEXT, created_at TEXT DEFAULT (datetime('now')))" },
-          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
+          { sql: "CREATE TABLE IF NOT EXISTS investors (id TEXT PRIMARY KEY, branch_id TEXT DEFAULT 'BRANCH_MAIN', pool_id TEXT NOT NULL, investor_name TEXT NOT NULL, phone_number TEXT, cnic TEXT, contributed_amount REAL DEFAULT 0, equity_percentage REAL DEFAULT 0, total_payout_received REAL DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS dividend_distributions (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, investor_name TEXT NOT NULL, profit_amount REAL NOT NULL, distribution_date TEXT, created_at TEXT DEFAULT (datetime('now')))" },
           { sql: "CREATE TABLE IF NOT EXISTS investor_payouts (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, investor_id TEXT NOT NULL, amount_paid REAL DEFAULT 0, payout_date TEXT, payment_mode TEXT DEFAULT 'CASH', notes TEXT, created_at TEXT DEFAULT (datetime('now')))" },
         ]);
@@ -738,7 +743,8 @@ function initWebApi(): WebApi {
           };
           await queueWriteToIndexedDB(item);
           console.log(`[Web] Write queued offline: ${sql.substring(0, 60)}`);
-          return { success: true, data: { rows: [] } };
+          // queued: true lets the UI show "saved offline" instead of false success
+          return { success: true, data: { rows: [] }, queued: true };
         }
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }

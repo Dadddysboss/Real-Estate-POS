@@ -158,7 +158,7 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser, branc
       return;
     }
     try {
-      await addInvestor(currentUser.id, currentUser.fullName, {
+      const result = await addInvestor(currentUser.id, currentUser.fullName, {
         pool_id: selectedPool.id,
         investor_name: invName.trim(),
         phone_number: invPhone.trim(),
@@ -166,7 +166,9 @@ export const InvestorPools: React.FC<InvestorPoolsProps> = ({ currentUser, branc
         contributed_amount: invAmount,
         equity_percentage: invEquity,
       });
-      setMessage({ type: 'success', text: 'Investor added' });
+      setMessage(result.queued
+        ? { type: 'error', text: 'Saved offline — investor will sync when connection is restored' }
+        : { type: 'success', text: 'Investor added' });
       setShowInvestorForm(false);
       setInvName(''); setInvPhone(''); setInvCnic('');
       setInvAmount(0); setInvEquity(0);

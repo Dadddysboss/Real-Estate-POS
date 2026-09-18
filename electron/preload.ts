@@ -4,6 +4,8 @@ export interface DatabaseResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  /** True when a failed write was stored in the offline queue instead of applied */
+  queued?: boolean;
 }
 
 export interface AuthResponse {
