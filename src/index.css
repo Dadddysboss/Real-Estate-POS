@@ -879,3 +879,58 @@ html.theme-light .shimmer {
     border-color: rgba(15, 23, 42, 0.08);
   }
 }
+
+/* GPU Acceleration & 60/120 FPS Performance Rules */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.glass-card,
+.glass-modal,
+.glass-confirm,
+.mobile-topbar,
+.drawer-panel,
+.fixed > div,
+[data-gpu-accelerated="true"] {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+.glass-card {
+  animation: shimmer 3s ease-in-out infinite;
+  background-size: 200% 100%;
+}
+
+.mobile-nav-bar,
+.mobile-bottom-nav,
+.bottom-nav-container {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.modal-scrollable,
+.glass-modal > div,
+.glass-confirm,
+div.fixed.inset-0 > div {
+  will-change: transform;
+  transform: translateZ(0);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent repaints on scroll */
+div[style*="position: fixed"],
+div[style*="position:fixed"] {
+  transform: translateZ(0);
+}
+
+/* Hardware canvas acceleration for charts */
+canvas {
+  will-change: transform;
+  transform: translateZ(0);
+  hardwareAccelerated: true;
+}

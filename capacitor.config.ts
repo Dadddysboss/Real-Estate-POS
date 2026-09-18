@@ -12,6 +12,7 @@ const config: CapacitorConfig = {
     allowMixedContent: true,
     captureInput: true,
     webContentsDebuggingEnabled: false,
+    overrideUserAgent: 'DrippRealEstateERP/1.0.0',
   },
   plugins: {
     SplashScreen: {
